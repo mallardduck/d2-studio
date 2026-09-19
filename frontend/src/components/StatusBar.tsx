@@ -6,6 +6,8 @@ interface Props {
   meta: Meta | null;
   themeName: string;
   errorCount: number;
+  /** Non-blocking message, e.g. a settings save failure. */
+  notice?: string;
 }
 
 const LABEL: Record<CompileState, { text: string; color: string }> = {
@@ -21,7 +23,7 @@ const SOURCE_NOTE: Record<string, string> = {
   default: "default",
 };
 
-export function StatusBar({ state, meta, themeName, errorCount }: Props) {
+export function StatusBar({ state, meta, themeName, errorCount, notice }: Props) {
   const s = LABEL[state];
   return (
     <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-line bg-surface-alt px-3 text-fg-muted">
@@ -36,6 +38,7 @@ export function StatusBar({ state, meta, themeName, errorCount }: Props) {
           <span>{meta.durationMs} ms</span>
         </>
       )}
+      {notice && <span className="text-warn">{notice}</span>}
       <span className="ml-auto">UTF-8</span>
     </footer>
   );

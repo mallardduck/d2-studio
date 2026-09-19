@@ -23,6 +23,7 @@ func main() {
 		Description: "A local editor and live preview for D2 diagrams",
 		Services: []application.Service{
 			application.NewService(compilerService),
+			application.NewService(NewSettingsService()),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
