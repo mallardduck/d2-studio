@@ -224,3 +224,41 @@ func TestEmptySourceCompiles(t *testing.T) {
 		t.Fatal("empty source must not be stale")
 	}
 }
+
+func TestThemeSourceDistinguishesSourceFromDefault(t *testing.T) {
+	s := newService(t)
+
+	res := compile(t, s, "a -> b", Options{})
+	if res.Meta.ThemeSource != "default" || res.Meta.SourceThemeID != nil {
+		t.Fatalf("no d2-config: %+v", res.Meta)
+	}
+
+	res = compile(t, s, "vars: {d2-config: {theme-id: 300}}\na -> b", Options{})
+	if res.Status != StatusSuccess {
+		t.Fatalf("diagnostics = %+v", res.Diagnostics)
+	}
+	if res.Meta.ThemeID != 300 || res.Meta.ThemeSource != "source" ||
+		res.Meta.SourceThemeID == nil || *res.Meta.SourceThemeID != 300 {
+		t.Fatalf("theme from source: %+v", res.Meta)
+	}
+}
+
+// A UI selection wins, but the result still reports what the source declares
+// so the UI can say it is overriding d2-config.
+func TestOverrideStillReportsSourceConfig(t *testing.T) {
+	s := newService(t)
+	src := "vars: {d2-config: {layout-engine: elk; theme-id: 300}}\na -> b"
+	other := int64(1)
+
+	res := compile(t, s, src, Options{Layout: "dagre", ThemeID: &other})
+	if res.Status != StatusSuccess {
+		t.Fatalf("diagnostics = %+v", res.Diagnostics)
+	}
+	m := res.Meta
+	if m.Layout != "dagre" || m.LayoutSource != "ui" || m.SourceLayout != "elk" {
+		t.Fatalf("layout meta: %+v", m)
+	}
+	if m.ThemeID != 1 || m.ThemeSource != "ui" || m.SourceThemeID == nil || *m.SourceThemeID != 300 {
+		t.Fatalf("theme meta: %+v", m)
+	}
+}

@@ -1,10 +1,11 @@
 import type { CompileState } from "../hooks/useCompiler";
-import type { Meta } from "../../bindings/d2studio/compiler/models";
+import type { Meta, Theme } from "../../bindings/d2studio/compiler/models";
+import { themeLabel } from "./OptionsBar";
 
 interface Props {
   state: CompileState;
   meta: Meta | null;
-  themeName: string;
+  themes: Theme[];
   errorCount: number;
   /** Non-blocking message, e.g. a settings save failure. */
   notice?: string;
@@ -17,14 +18,20 @@ const LABEL: Record<CompileState, { text: string; color: string }> = {
   error: { text: "Error", color: "text-err" },
 };
 
-const SOURCE_NOTE: Record<string, string> = {
-  ui: "selected in app",
-  source: "set in d2-config",
-  default: "default",
-};
+/** Where a setting came from, shown only when it is not the plain default. */
+function origin(source: string, overridden: string): string {
+  if (overridden) return ` · overrides d2-config (${overridden})`;
+  return source === "source" ? " · from d2-config" : "";
+}
 
-export function StatusBar({ state, meta, themeName, errorCount, notice }: Props) {
+export function StatusBar({ state, meta, themes, errorCount, notice }: Props) {
   const s = LABEL[state];
+  const layoutOverrides =
+    meta?.layoutSource === "ui" && meta.sourceLayout && meta.sourceLayout !== meta.layout ? meta.sourceLayout : "";
+  const themeOverrides =
+    meta?.themeSource === "ui" && meta.sourceThemeId != null && meta.sourceThemeId !== meta.themeId
+      ? themeLabel(themes, meta.sourceThemeId)
+      : "";
   return (
     <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-line bg-surface-alt px-3 text-fg-muted">
       <span aria-live="polite" className={`font-medium ${s.color}`}>
@@ -33,8 +40,14 @@ export function StatusBar({ state, meta, themeName, errorCount, notice }: Props)
       </span>
       {meta && (
         <>
-          <span title={SOURCE_NOTE[meta.layoutSource] ?? ""}>Layout: {meta.layout}</span>
-          <span>Theme: {themeName}</span>
+          <span>
+            Layout: {meta.layout}
+            {origin(meta.layoutSource, layoutOverrides)}
+          </span>
+          <span>
+            Theme: {themeLabel(themes, meta.themeId)}
+            {origin(meta.themeSource, themeOverrides)}
+          </span>
           <span>{meta.durationMs} ms</span>
         </>
       )}

@@ -6,10 +6,12 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/d2lang/d2/d2compiler"
 	"github.com/d2lang/d2/d2lib"
 	"github.com/d2lang/d2/d2plugin"
 	"github.com/d2lang/d2/d2renderers/d2svg"
@@ -129,14 +131,11 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 		OmitVersion: go2.Pointer(true),
 	}
 
-	layoutSource, themeSource := "default", "d2"
 	if req.Options.Layout != "" {
 		copts.Layout = go2.Pointer(lower(req.Options.Layout))
-		layoutSource = "ui"
 	}
 	if req.Options.ThemeID != nil {
 		ropts.ThemeID = req.Options.ThemeID
-		themeSource = "ui"
 	}
 	ropts.Sketch = req.Options.Sketch
 
@@ -153,9 +152,9 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 		return &Result{Seq: seq, Status: StatusError, Diagnostics: diagnosticsFromError(err, req.Path)}
 	}
 
-	if layoutSource == "default" && diagram.Config != nil && diagram.Config.LayoutEngine != nil {
-		layoutSource = "source"
-	}
+	srcLayout, srcTheme := s.sourceConfig(req)
+	layoutSource := pickSource(req.Options.Layout != "", srcLayout != "")
+	themeSource := pickSource(req.Options.ThemeID != nil, srcTheme != nil)
 
 	// Mirror the D2 CLI: reject diagrams that use features the chosen
 	// engine cannot lay out, instead of rendering something wrong.
@@ -184,12 +183,43 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 		SVG:         string(svg),
 		Diagnostics: []Diagnostic{},
 		Meta: Meta{
-			Layout:       *copts.Layout,
-			ThemeID:      themeID,
-			LayoutSource: layoutSource,
-			ThemeSource:  themeSource,
-			Width:        br.X - tl.X,
-			Height:       br.Y - tl.Y,
+			Layout:        *copts.Layout,
+			ThemeID:       themeID,
+			LayoutSource:  layoutSource,
+			ThemeSource:   themeSource,
+			SourceLayout:  srcLayout,
+			SourceThemeID: srcTheme,
+			Width:         br.X - tl.X,
+			Height:        br.Y - tl.Y,
 		},
+	}
+}
+
+// sourceConfig reports the layout engine and theme the .d2 source itself
+// declares in d2-config. D2 overwrites its own config with the resolved
+// values, so this reads the config directly; it parses and builds the IR but
+// runs no layout, so it is cheap next to a full compile.
+func (s *Service) sourceConfig(req Request) (layout string, themeID *int64) {
+	_, cfg, err := d2compiler.Compile(req.Path, strings.NewReader(req.Source), &d2compiler.CompileOptions{
+		UTF16Pos: true,
+		FS:       s.fsys,
+	})
+	if err != nil || cfg == nil {
+		return "", nil
+	}
+	if cfg.LayoutEngine != nil {
+		layout = strings.ToLower(*cfg.LayoutEngine)
+	}
+	return layout, cfg.ThemeID
+}
+
+func pickSource(ui, source bool) string {
+	switch {
+	case ui:
+		return "ui"
+	case source:
+		return "source"
+	default:
+		return "default"
 	}
 }

@@ -54,14 +54,18 @@ type Meta struct {
 	// Effective settings actually used.
 	Layout  string `json:"layout"`
 	ThemeID int64  `json:"themeId"`
-	// LayoutSource and ThemeSource explain where the setting came from:
-	// "ui", "source" (d2-config in the .d2 file) or "default".
-	// ThemeSource cannot distinguish "source" from "default" after D2
-	// resolves it and reports "d2" in that case.
+	// LayoutSource and ThemeSource explain where the effective setting came
+	// from: "ui" (selected in the app), "source" (d2-config in the .d2 file)
+	// or "default" (D2's default).
 	LayoutSource string `json:"layoutSource"`
 	ThemeSource  string `json:"themeSource"`
-	Width        int    `json:"width"`
-	Height       int    `json:"height"`
+	// SourceLayout and SourceThemeID are what the .d2 file's d2-config
+	// declares, whether or not a UI selection overrides them. Empty / nil
+	// when the source does not set them.
+	SourceLayout  string `json:"sourceLayout"`
+	SourceThemeID *int64 `json:"sourceThemeId"`
+	Width         int    `json:"width"`
+	Height        int    `json:"height"`
 }
 
 // Status of a compilation.

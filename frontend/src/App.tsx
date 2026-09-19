@@ -1,32 +1,38 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Themes } from "../bindings/d2studio/compilerservice";
-import type { Diagnostic, Options, Theme } from "../bindings/d2studio/compiler/models";
+import { Engines, Themes } from "../bindings/d2studio/compilerservice";
+import type { Diagnostic, Engine, Options, Theme } from "../bindings/d2studio/compiler/models";
 import { Editor, type EditorHandle } from "./components/Editor";
 import { Preview } from "./components/Preview";
 import { Diagnostics } from "./components/Diagnostics";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar, MODES } from "./components/Toolbar";
+import { OptionsBar } from "./components/OptionsBar";
 import { SplitDivider } from "./components/SplitDivider";
 import { useCompiler } from "./hooks/useCompiler";
 import { clampRatio, useSettings, type ViewMode } from "./hooks/useSettings";
 import { SAMPLE } from "./sample";
-
-// Empty options: layout engine and theme come from the D2 source or D2's defaults.
-const NO_OPTIONS: Options = { layout: "", themeId: null, sketch: null };
 
 export default function App() {
   const [source, setSource] = useState(SAMPLE);
   const [themes, setThemes] = useState<Theme[]>([]);
   const editor = useRef<EditorHandle>(null);
   const main = useRef<HTMLElement>(null);
-  const view = useCompiler(source, NO_OPTIONS);
+  const [engines, setEngines] = useState<Engine[]>([]);
   const { settings, update, saveError } = useSettings();
+
+  // Empty layout / null theme mean "follow the D2 source, else D2's default".
+  const options = useMemo<Options>(
+    () => ({ layout: settings?.layout ?? "", themeId: settings?.themeId ?? null, sketch: null }),
+    [settings?.layout, settings?.themeId],
+  );
+  const view = useCompiler(source, options);
 
   // While dragging, the ratio is local; it is persisted once on release.
   const [dragRatio, setDragRatio] = useState<number | null>(null);
 
   useEffect(() => {
     Themes().then((t) => setThemes(t ?? []));
+    Engines().then((e) => setEngines(e ?? []));
   }, []);
 
   const mode = (settings?.viewMode ?? "split") as ViewMode;
@@ -45,11 +51,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [setMode]);
 
-  const themeName = useMemo(() => {
-    if (!view.meta) return "";
-    return themes.find((t) => t.id === view.meta!.themeId)?.name ?? String(view.meta.themeId);
-  }, [themes, view.meta]);
-
   const reveal = useCallback((d: Diagnostic) => editor.current?.reveal(d.from, d.to), []);
 
   // Wait for saved settings so the saved layout is applied on first paint.
@@ -61,7 +62,22 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <Toolbar fileName="Untitled.d2" mode={mode} onMode={setMode} />
+      <Toolbar
+        fileName="Untitled.d2"
+        mode={mode}
+        onMode={setMode}
+        options={
+          <OptionsBar
+            engines={engines}
+            themes={themes}
+            layout={settings.layout}
+            themeId={settings.themeId}
+            meta={view.meta}
+            onLayout={(layout) => update({ layout })}
+            onTheme={(themeId) => update({ themeId })}
+          />
+        }
+      />
 
       <main ref={main} className="flex min-h-0 flex-1">
         {/* Both panes stay mounted so editor state survives mode changes. */}
@@ -102,7 +118,7 @@ export default function App() {
       <StatusBar
         state={view.state}
         meta={view.meta}
-        themeName={themeName}
+        themes={themes}
         errorCount={view.diagnostics.length}
         notice={saveError ? `Settings not saved: ${saveError}` : ""}
       />

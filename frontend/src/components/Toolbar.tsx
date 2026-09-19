@@ -1,9 +1,12 @@
+import type { ReactNode } from "react";
 import type { ViewMode } from "../hooks/useSettings";
 
 interface Props {
   fileName: string;
   mode: ViewMode;
   onMode: (m: ViewMode) => void;
+  /** Layout/theme selectors. */
+  options?: ReactNode;
 }
 
 const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
@@ -15,13 +18,15 @@ export const MODES: { id: ViewMode; label: string; key: string }[] = [
   { id: "preview", label: "Preview", key: "3" },
 ];
 
-export function Toolbar({ fileName, mode, onMode }: Props) {
+export function Toolbar({ fileName, mode, onMode, options }: Props) {
   return (
     <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-surface-alt px-3">
       <h1 className="text-sm font-semibold">D2 Studio</h1>
       <span className="text-fg-muted">{fileName}</span>
 
-      <div role="group" aria-label="View mode" className="ml-auto flex overflow-hidden rounded-md border border-line">
+      <div className="ml-auto">{options}</div>
+
+      <div role="group" aria-label="View mode" className="flex overflow-hidden rounded-md border border-line">
         {MODES.map((m) => (
           <button
             key={m.id}
