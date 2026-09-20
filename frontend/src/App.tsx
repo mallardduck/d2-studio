@@ -1,5 +1,6 @@
+import type { Extension } from "@codemirror/state";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Engines, Themes } from "../bindings/d2studio/compilerservice";
+import { Engines, Language, Themes } from "../bindings/d2studio/compilerservice";
 import type { Diagnostic, Engine, Options, Theme } from "../bindings/d2studio/compiler/models";
 import { Editor, type EditorHandle } from "./components/Editor";
 import { Preview } from "./components/Preview";
@@ -10,6 +11,7 @@ import { OptionsBar } from "./components/OptionsBar";
 import { SplitDivider } from "./components/SplitDivider";
 import { useCompiler } from "./hooks/useCompiler";
 import { clampRatio, useSettings, type ViewMode } from "./hooks/useSettings";
+import { d2Language } from "./editor/d2lang";
 import { SAMPLE } from "./sample";
 
 export default function App() {
@@ -18,6 +20,7 @@ export default function App() {
   const editor = useRef<EditorHandle>(null);
   const main = useRef<HTMLElement>(null);
   const [engines, setEngines] = useState<Engine[]>([]);
+  const [language, setLanguage] = useState<Extension>();
   const { settings, update, saveError } = useSettings();
 
   // Empty layout / null theme mean "follow the D2 source, else D2's default".
@@ -33,6 +36,7 @@ export default function App() {
   useEffect(() => {
     Themes().then((t) => setThemes(t ?? []));
     Engines().then((e) => setEngines(e ?? []));
+    Language().then((l) => setLanguage(d2Language(l)));
   }, []);
 
   const mode = (settings?.viewMode ?? "split") as ViewMode;
@@ -94,6 +98,7 @@ export default function App() {
               onChange={setSource}
               diagnostics={view.diagnostics}
               diagnosticsSource={view.diagnosticsSource}
+              language={language}
             />
           </div>
           <Diagnostics diagnostics={view.diagnostics} onSelect={reveal} />

@@ -32,3 +32,12 @@ func (s *CompilerService) Engines() []compiler.Engine { return compiler.Engines(
 
 // Themes lists the themes from D2's catalog.
 func (s *CompilerService) Themes() []compiler.Theme { return compiler.Themes() }
+
+// Language returns D2's keyword and value vocabulary for syntax highlighting.
+func (s *CompilerService) Language() compiler.LanguageInfo { return compiler.Language() }
+
+// Complete returns context-aware completions. line and column are zero-based
+// and column counts UTF-16 code units.
+func (s *CompilerService) Complete(source string, line, column int) []compiler.Completion {
+	return compiler.Complete(source, line, column)
+}

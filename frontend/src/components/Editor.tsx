@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorView, basicSetup } from "codemirror";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { setDiagnostics, lintGutter } from "@codemirror/lint";
 import type { Diagnostic as D2Diagnostic } from "../../bindings/d2studio/compiler/models";
 
@@ -15,6 +15,8 @@ interface Props {
   diagnostics: D2Diagnostic[];
   /** Source the diagnostics were computed for. */
   diagnosticsSource: string;
+  /** D2 language support; plain text until D2's vocabulary has loaded. */
+  language?: Extension;
 }
 
 const theme = EditorView.theme({
@@ -31,11 +33,12 @@ const theme = EditorView.theme({
 });
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor(
-  { initialDoc, onChange, diagnostics, diagnosticsSource },
+  { initialDoc, onChange, diagnostics, diagnosticsSource, language },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
+  const languageSlot = useRef(new Compartment());
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -46,6 +49,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
         doc: initialDoc,
         extensions: [
           basicSetup,
+          languageSlot.current.of(language ?? []),
           lintGutter(),
           theme,
           EditorView.contentAttributes.of({ "aria-label": "D2 source" }),
@@ -63,6 +67,10 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
     // The editor owns its document after creation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    view.current?.dispatch({ effects: languageSlot.current.reconfigure(language ?? []) });
+  }, [language]);
 
   // Only show diagnostics whose positions still match the editor text; after
   // that CodeMirror maps them through further edits.
