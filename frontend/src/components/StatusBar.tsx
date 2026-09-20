@@ -6,6 +6,8 @@ interface Props {
   state: CompileState;
   meta: Meta | null;
   themes: Theme[];
+  /** Preview zoom percentage; null when there is no visible preview. */
+  zoom?: number | null;
   errorCount: number;
   /** Non-blocking message, e.g. a settings save failure. */
   notice?: string;
@@ -24,7 +26,7 @@ function origin(source: string, overridden: string): string {
   return source === "source" ? " · from d2-config" : "";
 }
 
-export function StatusBar({ state, meta, themes, errorCount, notice }: Props) {
+export function StatusBar({ state, meta, themes, zoom, errorCount, notice }: Props) {
   const s = LABEL[state];
   const layoutOverrides =
     meta?.layoutSource === "ui" && meta.sourceLayout && meta.sourceLayout !== meta.layout ? meta.sourceLayout : "";
@@ -48,6 +50,7 @@ export function StatusBar({ state, meta, themes, errorCount, notice }: Props) {
             Theme: {themeLabel(themes, meta.themeId)}
             {origin(meta.themeSource, themeOverrides)}
           </span>
+          {zoom != null && <span>Zoom: {zoom}%</span>}
           <span>{meta.durationMs} ms</span>
         </>
       )}

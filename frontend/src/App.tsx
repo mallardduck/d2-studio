@@ -21,6 +21,7 @@ export default function App() {
   const main = useRef<HTMLElement>(null);
   const [engines, setEngines] = useState<Engine[]>([]);
   const [language, setLanguage] = useState<Extension>();
+  const [zoom, setZoom] = useState<number | null>(null);
   const { settings, update, saveError } = useSettings();
 
   // Empty layout / null theme mean "follow the D2 source, else D2's default".
@@ -116,7 +117,7 @@ export default function App() {
         )}
 
         <section aria-label="Preview" hidden={!showPreview} className="min-w-0 flex-1">
-          <Preview svg={view.svg} state={view.state} />
+          <Preview svg={view.svg} state={view.state} onZoomChange={setZoom} />
         </section>
       </main>
 
@@ -124,6 +125,7 @@ export default function App() {
         state={view.state}
         meta={view.meta}
         themes={themes}
+        zoom={mode === "source" ? null : zoom}
         errorCount={view.diagnostics.length}
         notice={saveError ? `Settings not saved: ${saveError}` : ""}
       />
