@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorView, basicSetup } from "codemirror";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { setDiagnostics, lintGutter } from "@codemirror/lint";
+import { TAB_HELP, tabKeys } from "../editor/tabKey";
 import type { Diagnostic as D2Diagnostic } from "../../bindings/d2studio/compiler/models";
 
 export interface EditorHandle {
@@ -49,10 +50,11 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
         doc: initialDoc,
         extensions: [
           basicSetup,
+          tabKeys(),
           languageSlot.current.of(language ?? []),
           lintGutter(),
           theme,
-          EditorView.contentAttributes.of({ "aria-label": "D2 source" }),
+          EditorView.contentAttributes.of({ "aria-label": "D2 source", "aria-describedby": "editor-tab-help" }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onChangeRef.current(u.state.doc.toString());
           }),
@@ -105,5 +107,12 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
     },
   }));
 
-  return <div ref={host} className="h-full min-h-0" />;
+  return (
+    <>
+      <p id="editor-tab-help" className="sr-only">
+        {TAB_HELP}
+      </p>
+      <div ref={host} className="h-full min-h-0" />
+    </>
+  );
 });
