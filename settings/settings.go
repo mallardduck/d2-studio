@@ -105,22 +105,28 @@ func (s *Store) Save(in Settings) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	return writeFileAtomic(s.path, b)
+}
+
+// writeFileAtomic writes data to path via a temp file in the same directory
+// and a rename, creating the directory if needed.
+func writeFileAtomic(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create settings directory: %w", err)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".settings-*.tmp")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".settings-*.tmp")
 	if err != nil {
 		return fmt.Errorf("write settings: %w", err)
 	}
 	defer os.Remove(tmp.Name()) // no-op after a successful rename
-	if _, err := tmp.Write(b); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return fmt.Errorf("write settings: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("write settings: %w", err)
 	}
-	if err := os.Rename(tmp.Name(), s.path); err != nil {
+	if err := os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("write settings: %w", err)
 	}
 	return nil
