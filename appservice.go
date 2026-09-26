@@ -2,8 +2,6 @@ package main
 
 import (
 	"sync/atomic"
-
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // EventCloseRequested is emitted when the user tries to close the window or
@@ -16,18 +14,20 @@ const EventCloseRequested = "app:close-requested"
 // shell without the user's say-so.
 type AppService struct {
 	allowQuit atomic.Bool
-	quit      func()
+	// emit asks the frontend whether quitting is safe.
+	emit func()
+	// quit really terminates the application.
+	quit func()
 }
 
-func NewAppService(quit func()) *AppService { return &AppService{quit: quit} }
-
-// ShouldQuit is wired to the application and window close hooks: it allows
-// quitting only after ConfirmQuit, and otherwise asks the frontend.
-func (s *AppService) shouldQuit(app *application.App) bool {
+// shouldQuit is called for every quit attempt (window close, Cmd/Ctrl+Q,
+// menu quit). It allows quitting only after ConfirmQuit; otherwise it asks
+// the frontend and refuses.
+func (s *AppService) shouldQuit() bool {
 	if s.allowQuit.Load() {
 		return true
 	}
-	app.Event.Emit(EventCloseRequested)
+	s.emit()
 	return false
 }
 

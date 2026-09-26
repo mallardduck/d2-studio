@@ -30,7 +30,9 @@ func main() {
 
 	// shouldQuit is set once the app exists; options need it first.
 	var shouldQuit func() bool
-	appService := NewAppService(nil)
+	// The service must exist before the app (it is part of the options); the
+	// functions that need the app are filled in once it has been created.
+	appService := &AppService{}
 
 	app := application.New(application.Options{
 		Name:        "D2 Studio",
@@ -49,8 +51,12 @@ func main() {
 		},
 	})
 
+	appService.emit = func() {
+		log.Printf("quit requested: asking the frontend whether it is safe")
+		app.Event.Emit(EventCloseRequested)
+	}
 	appService.quit = app.Quit
-	shouldQuit = func() bool { return appService.shouldQuit(app) }
+	shouldQuit = appService.shouldQuit
 
 	var recent *settings.RecentStore
 	if p, err := settings.RecentPath(); err != nil {
