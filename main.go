@@ -16,6 +16,12 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+func init() {
+	// Registering the event types gives the frontend typed event payloads.
+	application.RegisterEvent[files.Event](files.EventFileChanged)
+	application.RegisterEvent[application.Void](EventCloseRequested)
+}
+
 func main() {
 	compilerService, err := NewCompilerService()
 	if err != nil {

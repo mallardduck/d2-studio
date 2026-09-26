@@ -3,6 +3,10 @@ import type { ViewMode } from "../hooks/useSettings";
 
 interface Props {
   fileName: string;
+  /** True when there are unsaved edits. */
+  dirty: boolean;
+  /** File controls (New / Open / Save ...). */
+  files?: ReactNode;
   mode: ViewMode;
   onMode: (m: ViewMode) => void;
   /** Layout/theme selectors. */
@@ -18,11 +22,22 @@ export const MODES: { id: ViewMode; label: string; key: string }[] = [
   { id: "preview", label: "Preview", key: "3" },
 ];
 
-export function Toolbar({ fileName, mode, onMode, options }: Props) {
+export function Toolbar({ fileName, dirty, files, mode, onMode, options }: Props) {
   return (
     <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-surface-alt px-3">
       <h1 className="text-sm font-semibold">D2 Studio</h1>
-      <span className="text-fg-muted">{fileName}</span>
+      {files}
+      <span className="flex items-center gap-1.5 text-fg-muted" title={dirty ? "Unsaved changes" : undefined}>
+        {fileName}
+        {dirty && (
+          <>
+            <span aria-hidden="true" className="text-warn">
+              ●
+            </span>
+            <span className="sr-only">(unsaved changes)</span>
+          </>
+        )}
+      </span>
 
       <div className="ml-auto">{options}</div>
 

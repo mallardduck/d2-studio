@@ -9,7 +9,12 @@ import { StatusBar } from "./components/StatusBar";
 import { Toolbar, MODES } from "./components/Toolbar";
 import { OptionsBar } from "./components/OptionsBar";
 import { SplitDivider } from "./components/SplitDivider";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { FileBanner } from "./components/FileBanner";
+import { FileControls } from "./components/FileControls";
 import { useCompiler } from "./hooks/useCompiler";
+import { useConfirm } from "./hooks/useConfirm";
+import { useDocument } from "./hooks/useDocument";
 import { clampRatio, useSettings, type ViewMode } from "./hooks/useSettings";
 import { d2Language } from "./editor/d2lang";
 import { SAMPLE } from "./sample";
@@ -29,7 +34,13 @@ export default function App() {
     () => ({ layout: settings?.layout ?? "", themeId: settings?.themeId ?? null, sketch: null }),
     [settings?.layout, settings?.themeId],
   );
-  const view = useCompiler(source, options);
+  const { spec: dialog, confirm, choose } = useConfirm();
+  const setContent = useCallback((text: string) => {
+    editor.current?.setDoc(text);
+    setSource(text);
+  }, []);
+  const docs = useDocument({ content: source, setContent, confirm, initialContent: SAMPLE });
+  const view = useCompiler(source, options, docs.path ?? "");
 
   // While dragging, the ratio is local; it is persisted once on release.
   const [dragRatio, setDragRatio] = useState<number | null>(null);
@@ -39,6 +50,22 @@ export default function App() {
     Engines().then((e) => setEngines(e ?? []));
     Language().then((l) => setLanguage(d2Language(l)));
   }, []);
+
+  // Cmd/Ctrl+N, O, S and Shift+S.
+  const { newDocument, open, save, saveAs } = docs;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "s") (e.shiftKey ? saveAs() : save());
+      else if (k === "o" && !e.shiftKey) open();
+      else if (k === "n" && !e.shiftKey) newDocument();
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [newDocument, open, save, saveAs]);
 
   const mode = (settings?.viewMode ?? "split") as ViewMode;
   const setMode = useCallback((m: ViewMode) => update({ viewMode: m }), [update]);
@@ -68,7 +95,17 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       <Toolbar
-        fileName="Untitled.d2"
+        fileName={docs.name}
+        dirty={docs.dirty}
+        files={
+          <FileControls
+            onNew={docs.newDocument}
+            onOpen={docs.open}
+            onSave={docs.save}
+            onSaveAs={docs.saveAs}
+            onOpenRecent={(f) => docs.openPath(f.path)}
+          />
+        }
         mode={mode}
         onMode={setMode}
         options={
@@ -82,6 +119,16 @@ export default function App() {
             onTheme={(themeId) => update({ themeId })}
           />
         }
+      />
+
+      <FileBanner
+        banner={docs.banner}
+        name={docs.name}
+        onReload={docs.reload}
+        onKeepMine={docs.keepMine}
+        onSave={docs.save}
+        onSaveAs={docs.saveAs}
+        onDismiss={docs.dismissBanner}
       />
 
       <main ref={main} className="flex min-h-0 flex-1">
@@ -127,8 +174,11 @@ export default function App() {
         themes={themes}
         zoom={mode === "source" ? null : zoom}
         errorCount={view.diagnostics.length}
-        notice={saveError ? `Settings not saved: ${saveError}` : ""}
+        encoding={docs.encoding}
+        notice={docs.notice || (saveError ? `Settings not saved: ${saveError}` : "")}
       />
+
+      <ConfirmDialog spec={dialog} onChoose={choose} />
     </div>
   );
 }

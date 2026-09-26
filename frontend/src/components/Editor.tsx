@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorView, basicSetup } from "codemirror";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { setDiagnostics, lintGutter } from "@codemirror/lint";
@@ -8,6 +8,8 @@ import type { Diagnostic as D2Diagnostic } from "../../bindings/d2studio/compile
 export interface EditorHandle {
   /** Move the cursor to a source range and focus the editor. */
   reveal(from: number, to: number): void;
+  /** Replace the whole document with a fresh state (new undo history). */
+  setDoc(text: string): void;
 }
 
 interface Props {
@@ -43,23 +45,29 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
+  const languageRef = useRef(language);
+  languageRef.current = language;
+
+  // Built on demand so a new document starts with the current language.
+  const makeExtensions = useCallback(
+    (): Extension[] => [
+      basicSetup,
+      tabKeys(),
+      languageSlot.current.of(languageRef.current ?? []),
+      lintGutter(),
+      theme,
+      EditorView.contentAttributes.of({ "aria-label": "D2 source", "aria-describedby": "editor-tab-help" }),
+      EditorView.updateListener.of((u) => {
+        if (u.docChanged) onChangeRef.current(u.state.doc.toString());
+      }),
+    ],
+    [],
+  );
+
   useEffect(() => {
     const v = new EditorView({
       parent: host.current!,
-      state: EditorState.create({
-        doc: initialDoc,
-        extensions: [
-          basicSetup,
-          tabKeys(),
-          languageSlot.current.of(language ?? []),
-          lintGutter(),
-          theme,
-          EditorView.contentAttributes.of({ "aria-label": "D2 source", "aria-describedby": "editor-tab-help" }),
-          EditorView.updateListener.of((u) => {
-            if (u.docChanged) onChangeRef.current(u.state.doc.toString());
-          }),
-        ],
-      }),
+      state: EditorState.create({ doc: initialDoc, extensions: makeExtensions() }),
     });
     view.current = v;
     return () => {
@@ -94,6 +102,11 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
   }, [diagnostics, diagnosticsSource]);
 
   useImperativeHandle(ref, () => ({
+    setDoc(text) {
+      // A new state, not a transaction, so undo cannot cross into the
+      // previous document.
+      view.current?.setState(EditorState.create({ doc: text, extensions: makeExtensions() }));
+    },
     reveal(from, to) {
       const v = view.current;
       if (!v) return;

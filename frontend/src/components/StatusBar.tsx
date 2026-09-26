@@ -9,6 +9,8 @@ interface Props {
   /** Preview zoom percentage; null when there is no visible preview. */
   zoom?: number | null;
   errorCount: number;
+  /** How the file is stored, e.g. "UTF-8 · CRLF". */
+  encoding?: string;
   /** Non-blocking message, e.g. a settings save failure. */
   notice?: string;
 }
@@ -26,7 +28,7 @@ function origin(source: string, overridden: string): string {
   return source === "source" ? " · from d2-config" : "";
 }
 
-export function StatusBar({ state, meta, themes, zoom, errorCount, notice }: Props) {
+export function StatusBar({ state, meta, themes, zoom, errorCount, encoding = "UTF-8", notice }: Props) {
   const s = LABEL[state];
   const layoutOverrides =
     meta?.layoutSource === "ui" && meta.sourceLayout && meta.sourceLayout !== meta.layout ? meta.sourceLayout : "";
@@ -54,8 +56,10 @@ export function StatusBar({ state, meta, themes, zoom, errorCount, notice }: Pro
           <span>{meta.durationMs} ms</span>
         </>
       )}
-      {notice && <span className="text-warn">{notice}</span>}
-      <span className="ml-auto">UTF-8</span>
+      <span role="status" className="text-fg">
+        {notice}
+      </span>
+      <span className="ml-auto">{encoding}</span>
     </footer>
   );
 }
