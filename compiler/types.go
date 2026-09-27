@@ -19,9 +19,13 @@ type Options struct {
 type Request struct {
 	Source  string  `json:"source"`
 	Options Options `json:"options"`
-	// Path is the file being edited, used for error locations and, in later
-	// stages, relative imports. May be empty for unsaved buffers.
+	// Path is the file being edited; imports resolve relative to it. Empty
+	// for an unsaved document.
 	Path string `json:"path"`
+	// Workspace is the open workspace folder, or "". Imports may read any
+	// file inside it when Path is inside it; otherwise only the file's own
+	// directory is readable.
+	Workspace string `json:"workspace"`
 }
 
 type Severity string

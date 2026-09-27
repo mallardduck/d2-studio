@@ -117,9 +117,17 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 	}()
 	layoutResolver, routerResolver := resolvers()
 
+	importFS, err := s.importFS(req)
+	if err != nil {
+		return &Result{Seq: seq, Status: StatusError, Diagnostics: []Diagnostic{{
+			Severity: SeverityError,
+			Message:  fmt.Sprintf("cannot prepare imports: %v", err),
+		}}}
+	}
+
 	copts := &d2lib.CompileOptions{
 		UTF16Pos:       true,
-		FS:             s.fsys,
+		FS:             importFS,
 		Ruler:          s.ruler,
 		InputPath:      req.Path,
 		LayoutResolver: layoutResolver,
@@ -200,9 +208,13 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 // values, so this reads the config directly; it parses and builds the IR but
 // runs no layout, so it is cheap next to a full compile.
 func (s *Service) sourceConfig(req Request) (layout string, themeID *int64) {
+	importFS, err := s.importFS(req)
+	if err != nil {
+		return "", nil
+	}
 	_, cfg, err := d2compiler.Compile(req.Path, strings.NewReader(req.Source), &d2compiler.CompileOptions{
 		UTF16Pos: true,
-		FS:       s.fsys,
+		FS:       importFS,
 	})
 	if err != nil || cfg == nil {
 		return "", nil
@@ -222,4 +234,22 @@ func pickSource(ui, source bool) string {
 	default:
 		return "default"
 	}
+}
+
+// importFS returns the filesystem imports are read from for req. A fixed
+// Service.fsys (used by tests) wins; otherwise reads are confined to the
+// import root. A nil result means there is nothing to resolve imports against.
+func (s *Service) importFS(req Request) (fs.FS, error) {
+	if s.fsys != nil {
+		return s.fsys, nil
+	}
+	root := ImportRoot(req.Path, req.Workspace)
+	if root == "" {
+		return nil, nil
+	}
+	r, err := newRootFS(root)
+	if err != nil {
+		return nil, err // not r: a nil *rootFS would be a non-nil fs.FS
+	}
+	return r, nil
 }
