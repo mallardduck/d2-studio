@@ -117,13 +117,14 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 	}()
 	layoutResolver, routerResolver := resolvers()
 
-	importFS, err := s.importFS(req)
+	importFS, closeFS, err := s.importFS(req)
 	if err != nil {
 		return &Result{Seq: seq, Status: StatusError, Diagnostics: []Diagnostic{{
 			Severity: SeverityError,
 			Message:  fmt.Sprintf("cannot prepare imports: %v", err),
 		}}}
 	}
+	defer closeFS()
 
 	copts := &d2lib.CompileOptions{
 		UTF16Pos:       true,
@@ -160,7 +161,7 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 		return &Result{Seq: seq, Status: StatusError, Diagnostics: diagnosticsFromError(err, req.Path)}
 	}
 
-	srcLayout, srcTheme := s.sourceConfig(req)
+	srcLayout, srcTheme := s.sourceConfig(req, importFS)
 	layoutSource := pickSource(req.Options.Layout != "", srcLayout != "")
 	themeSource := pickSource(req.Options.ThemeID != nil, srcTheme != nil)
 
@@ -207,11 +208,7 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 // declares in d2-config. D2 overwrites its own config with the resolved
 // values, so this reads the config directly; it parses and builds the IR but
 // runs no layout, so it is cheap next to a full compile.
-func (s *Service) sourceConfig(req Request) (layout string, themeID *int64) {
-	importFS, err := s.importFS(req)
-	if err != nil {
-		return "", nil
-	}
+func (s *Service) sourceConfig(req Request, importFS fs.FS) (layout string, themeID *int64) {
 	_, cfg, err := d2compiler.Compile(req.Path, strings.NewReader(req.Source), &d2compiler.CompileOptions{
 		UTF16Pos: true,
 		FS:       importFS,
@@ -236,20 +233,22 @@ func pickSource(ui, source bool) string {
 	}
 }
 
-// importFS returns the filesystem imports are read from for req. A fixed
-// Service.fsys (used by tests) wins; otherwise reads are confined to the
-// import root. A nil result means there is nothing to resolve imports against.
-func (s *Service) importFS(req Request) (fs.FS, error) {
+// importFS returns the filesystem imports are read from for req, and a
+// function that releases it. A fixed Service.fsys (used by tests) wins;
+// otherwise reads are confined to the import root. A nil filesystem means
+// there is nothing to resolve imports against.
+func (s *Service) importFS(req Request) (fs.FS, func(), error) {
+	noop := func() {}
 	if s.fsys != nil {
-		return s.fsys, nil
+		return s.fsys, noop, nil
 	}
 	root := ImportRoot(req.Path, req.Workspace)
 	if root == "" {
-		return nil, nil
+		return nil, noop, nil
 	}
 	r, err := newRootFS(root)
 	if err != nil {
-		return nil, err // not r: a nil *rootFS would be a non-nil fs.FS
+		return nil, noop, err // not r: a nil *rootFS would be a non-nil fs.FS
 	}
-	return r, nil
+	return r, func() { r.Close() }, nil
 }

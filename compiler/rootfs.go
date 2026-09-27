@@ -12,11 +12,17 @@ import (
 // rootFS is the filesystem D2 reads imports from. It only lets a compile
 // read files inside root, so a diagram opened from an untrusted source cannot
 // pull arbitrary files from elsewhere on disk into its output or error
-// messages. Symlinks are resolved before the check, so a link inside root
-// cannot be used to escape it.
+// messages.
+//
+// Containment is enforced by os.Root (Go 1.24+), which checks every path
+// component as it opens the file. That closes the gap a "resolve symlinks,
+// check the prefix, then open" approach leaves, where a symlink can be
+// swapped between the check and the open. Symlinks that stay inside root
+// work if their target is relative; ones that lead outside, ones with an
+// absolute target (even if it points inside), and ".." escapes are refused.
 type rootFS struct {
-	root     string // as given, for messages
-	realRoot string // symlinks resolved, for the containment check
+	root string // as given, for messages
+	dir  *os.Root
 }
 
 func newRootFS(root string) (*rootFS, error) {
@@ -24,49 +30,64 @@ func newRootFS(root string) (*rootFS, error) {
 	if err != nil {
 		return nil, err
 	}
-	real, err := filepath.EvalSymlinks(abs)
+	dir, err := os.OpenRoot(abs)
 	if err != nil {
 		return nil, err
 	}
-	return &rootFS{root: abs, realRoot: real}, nil
+	return &rootFS{root: abs, dir: dir}, nil
 }
+
+// Close releases the directory handle.
+func (r *rootFS) Close() error { return r.dir.Close() }
 
 // Open implements fs.FS. D2 passes absolute paths for imports (built from the
 // importing file's path); relative names are taken as relative to root.
 func (r *rootFS) Open(name string) (fs.File, error) {
-	p := filepath.FromSlash(name)
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(r.root, p)
-	}
-	p = filepath.Clean(p)
-
-	real, err := filepath.EvalSymlinks(p)
-	if err != nil {
-		// Report a missing file as missing, even if it would also be outside.
-		return nil, &fs.PathError{Op: "open", Path: name, Err: unwrapNotExist(err)}
-	}
-	if !within(r.realRoot, real) {
+	p := filepath.Clean(filepath.FromSlash(name))
+	rel := p
+	if filepath.IsAbs(p) {
+		var err error
+		if rel, err = filepath.Rel(r.root, p); err != nil || escapesLexically(rel) {
+			return nil, &fs.PathError{Op: "open", Path: name, Err: &outsideError{root: r.root}}
+		}
+	} else if escapesLexically(rel) {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: &outsideError{root: r.root}}
 	}
-	info, err := os.Stat(real)
+
+	f, err := r.dir.Open(rel)
 	if err != nil {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: unwrapNotExist(err)}
+		if isEscape(err) {
+			return nil, &fs.PathError{Op: "open", Path: name, Err: &outsideError{root: r.root}}
+		}
+		return nil, &fs.PathError{Op: "open", Path: name, Err: unwrapPathError(err)}
 	}
-	if !info.Mode().IsRegular() {
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		f.Close()
 		return nil, &fs.PathError{Op: "open", Path: name, Err: errors.New("not a regular file")}
 	}
-	return os.Open(real)
+	return f, nil
+}
+
+func escapesLexically(rel string) bool {
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// isEscape reports whether os.Root refused a path for leaving the root. The
+// standard library does not export that error, so it is recognized by text.
+func isEscape(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "path escapes from parent")
 }
 
 type outsideError struct{ root string }
 
 func (e *outsideError) Error() string {
-	return fmt.Sprintf("it is outside the folder imports may be read from (%s); open that folder as the workspace to allow it", e.root)
+	return fmt.Sprintf("it is outside the folder imports may be read from (%s), or reached through a symlink that leaves it or uses an absolute path; open the containing folder as the workspace to allow it", e.root)
 }
 
-// unwrapNotExist returns the underlying error of an *fs.PathError so messages
-// do not repeat the path.
-func unwrapNotExist(err error) error {
+// unwrapPathError returns the underlying error of an *fs.PathError so
+// messages do not repeat the path.
+func unwrapPathError(err error) error {
 	var pe *fs.PathError
 	if errors.As(err, &pe) {
 		return pe.Err
@@ -74,14 +95,14 @@ func unwrapNotExist(err error) error {
 	return err
 }
 
-// within reports whether path is root or inside it. Both must be absolute
-// and symlink-free.
+// within reports whether path is root or inside it, comparing whole path
+// components (so "/a/proj-evil" is not inside "/a/proj"). Both must be absolute.
 func within(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
 		return false
 	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+	return rel == "." || !escapesLexically(rel)
 }
 
 // ImportRoot chooses the directory imports may be read from for a file: the

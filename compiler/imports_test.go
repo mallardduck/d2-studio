@@ -141,7 +141,29 @@ func TestSymlinkCannotEscapeTheFolder(t *testing.T) {
 	}
 }
 
-func TestSymlinkInsideTheFolderIsFine(t *testing.T) {
+func TestRelativeSymlinkInsideTheFolderIsFine(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	dir := tree(t, map[string]string{
+		"main.d2":      "...@alias\nok",
+		"real/part.d2": "via_link",
+	})
+	if err := os.Symlink(filepath.Join("real", "part.d2"), filepath.Join(dir, "alias.d2")); err != nil {
+		t.Fatal(err)
+	}
+	main := filepath.Join(dir, "main.d2")
+	res := compileAt(t, main, "", readSrc(t, main))
+	if res.Status != StatusSuccess || !strings.Contains(res.SVG, "via_link") {
+		t.Fatalf("status=%s diagnostics=%+v", res.Status, res.Diagnostics)
+	}
+}
+
+// os.Root cannot verify an absolute symlink target without resolving it, which
+// would reopen a check-then-open race, so these are refused even when the
+// target is inside the folder. The message must say so rather than blame the
+// folder alone.
+func TestAbsoluteSymlinkIsRefusedWithAnExplanation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks need privileges on Windows")
 	}
@@ -154,8 +176,11 @@ func TestSymlinkInsideTheFolderIsFine(t *testing.T) {
 	}
 	main := filepath.Join(dir, "main.d2")
 	res := compileAt(t, main, "", readSrc(t, main))
-	if res.Status != StatusSuccess || !strings.Contains(res.SVG, "via_link") {
-		t.Fatalf("status=%s diagnostics=%+v", res.Status, res.Diagnostics)
+	if res.Status != StatusError {
+		t.Fatalf("status = %s, want error", res.Status)
+	}
+	if !strings.Contains(res.Diagnostics[0].Message, "symlink") {
+		t.Fatalf("message should mention symlinks: %q", res.Diagnostics[0].Message)
 	}
 }
 
