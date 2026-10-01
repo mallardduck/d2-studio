@@ -29,11 +29,15 @@ type Settings struct {
 	Layout string `json:"layout"`
 	// ThemeID is a D2 theme ID, or nil to follow the D2 source / default.
 	ThemeID *int64 `json:"themeId"`
+	// Workspace is the folder open in the sidebar, or "" for none.
+	Workspace string `json:"workspace"`
+	// SidebarOpen is whether the workspace sidebar is shown.
+	SidebarOpen bool `json:"sidebarOpen"`
 }
 
 // Defaults returns the settings used on first launch.
 func Defaults() Settings {
-	return Settings{ViewMode: ViewSplit, SplitRatio: 0.5}
+	return Settings{ViewMode: ViewSplit, SplitRatio: 0.5, SidebarOpen: true}
 }
 
 // Normalize replaces invalid values with defaults and clamps the split ratio,

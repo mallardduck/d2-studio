@@ -6,6 +6,7 @@ import (
 
 	"d2studio/files"
 	"d2studio/settings"
+	"d2studio/workspace"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -19,6 +20,7 @@ var assets embed.FS
 func init() {
 	// Registering the event types gives the frontend typed event payloads.
 	application.RegisterEvent[files.Event](files.EventFileChanged)
+	application.RegisterEvent[workspace.Update](workspace.EventChanged)
 	application.RegisterEvent[application.Void](EventCloseRequested)
 }
 
@@ -66,6 +68,8 @@ func main() {
 	}
 	fileService := files.NewService(&wailsPlatform{app: app}, recent, files.DefaultPollInterval)
 	app.RegisterService(application.NewService(fileService))
+	workspaceService := workspace.NewService(&wailsPlatform{app: app}, workspace.DefaultLimits, workspace.DefaultPollInterval)
+	app.RegisterService(application.NewService(workspaceService))
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "D2 Studio",
@@ -85,6 +89,7 @@ func main() {
 
 	err = app.Run()
 	fileService.Shutdown()
+	workspaceService.Close()
 	if err != nil {
 		log.Fatal(err)
 	}

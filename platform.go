@@ -43,3 +43,19 @@ func (p *wailsPlatform) PickSaveFile(dir, filename string) (string, error) {
 func (p *wailsPlatform) Emit(event string, data any) {
 	p.app.Event.Emit(event, data)
 }
+
+// PickFolder implements workspace.Platform with a native folder dialog.
+func (p *wailsPlatform) PickFolder(dir string) (string, error) {
+	d := p.app.Dialog.OpenFile().
+		SetTitle("Open folder").
+		CanChooseFiles(false).
+		CanChooseDirectories(true).
+		CanCreateDirectories(true)
+	if w := p.app.Window.Current(); w != nil {
+		d.AttachToWindow(w)
+	}
+	if dir != "" {
+		d.SetDirectory(dir)
+	}
+	return d.PromptForSingleSelection()
+}

@@ -117,3 +117,26 @@ func TestLoadNormalizesHandEditedFile(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestSidebarDefaultsOpenAndWorkspaceIsRemembered(t *testing.T) {
+	if !Defaults().SidebarOpen {
+		t.Fatal("the sidebar should be open by default")
+	}
+	st, p := newStore(t)
+	// A settings file written before these fields existed keeps the defaults.
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	_ = os.WriteFile(p, []byte(`{"viewMode":"split","splitRatio":0.4}`), 0o644)
+	got, err := st.Load()
+	if err != nil || !got.SidebarOpen || got.Workspace != "" {
+		t.Fatalf("got %+v err=%v", got, err)
+	}
+
+	got.Workspace, got.SidebarOpen = "/work/diagrams", false
+	if err := st.Save(got); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := st.Load()
+	if again.Workspace != "/work/diagrams" || again.SidebarOpen {
+		t.Fatalf("round trip: %+v", again)
+	}
+}
