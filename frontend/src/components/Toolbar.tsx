@@ -5,6 +5,8 @@ interface Props {
   fileName: string;
   /** True when there are unsaved edits. */
   dirty: boolean;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
   /** File controls (New / Open / Save ...). */
   files?: ReactNode;
   mode: ViewMode;
@@ -22,9 +24,19 @@ export const MODES: { id: ViewMode; label: string; key: string }[] = [
   { id: "preview", label: "Preview", key: "3" },
 ];
 
-export function Toolbar({ fileName, dirty, files, mode, onMode, options }: Props) {
+export function Toolbar({ fileName, dirty, files, sidebarOpen, onToggleSidebar, mode, onMode, options }: Props) {
   return (
     <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-surface-alt px-3">
+      <button
+        type="button"
+        aria-pressed={sidebarOpen}
+        aria-label="Workspace sidebar"
+        title={`Toggle sidebar (${MOD}B)`}
+        onClick={onToggleSidebar}
+        className={`rounded px-2 py-1 hover:bg-line/40 ${sidebarOpen ? "text-accent" : ""}`}
+      >
+        ☰
+      </button>
       <h1 className="text-sm font-semibold">D2 Studio</h1>
       {files}
       <span className="flex items-center gap-1.5 text-fg-muted" title={dirty ? "Unsaved changes" : undefined}>

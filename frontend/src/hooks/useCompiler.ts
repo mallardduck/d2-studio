@@ -30,7 +30,14 @@ const EMPTY: CompilerView = {
  * run gets an id, the previous in-flight call is cancelled, and anything that
  * is not the latest run (or that the backend marks "stale") is discarded.
  */
-export function useCompiler(source: string, options: Options, path = ""): CompilerView {
+export function useCompiler(
+  source: string,
+  options: Options,
+  path = "",
+  workspace = "",
+  /** Bump to recompile without a source change (an imported file changed). */
+  revision = 0,
+): CompilerView {
   const [view, setView] = useState<CompilerView>(EMPTY);
   const latest = useRef(0);
   const inflight = useRef<{ cancel: () => void } | null>(null);
@@ -42,7 +49,7 @@ export function useCompiler(source: string, options: Options, path = ""): Compil
       inflight.current?.cancel();
       setView((v) => ({ ...v, state: "compiling" }));
 
-      const call = Compile({ source, options, path });
+      const call = Compile({ source, options, path, workspace });
       inflight.current = call;
 
       call
@@ -94,7 +101,7 @@ export function useCompiler(source: string, options: Options, path = ""): Compil
     return () => clearTimeout(timer);
     // `options` is tracked through optionsKey.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, optionsKey, path]);
+  }, [source, optionsKey, path, workspace, revision]);
 
   return view;
 }

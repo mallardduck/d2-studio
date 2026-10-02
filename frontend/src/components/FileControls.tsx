@@ -7,6 +7,7 @@ interface Props {
   onSave: () => void;
   onSaveAs: () => void;
   onOpenRecent: (file: RecentFile) => void;
+  onOpenFolder: () => void;
 }
 
 const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
@@ -15,7 +16,7 @@ const SHIFT = isMac ? "⇧" : "Shift+";
 
 const btn = "rounded px-2 py-1 hover:bg-line/40";
 
-export function FileControls({ onNew, onOpen, onSave, onSaveAs, onOpenRecent }: Props) {
+export function FileControls({ onNew, onOpen, onSave, onSaveAs, onOpenRecent, onOpenFolder }: Props) {
   return (
     <div role="group" aria-label="File" className="flex items-center gap-0.5">
       <button type="button" className={btn} title={`New (${MOD}N)`} onClick={onNew}>
@@ -25,6 +26,9 @@ export function FileControls({ onNew, onOpen, onSave, onSaveAs, onOpenRecent }: 
         Open…
       </button>
       <RecentMenu onOpen={onOpenRecent} />
+      <button type="button" className={btn} title={`Open folder… (${MOD}${SHIFT}O)`} onClick={onOpenFolder}>
+        Folder…
+      </button>
       <button type="button" className={btn} title={`Save (${MOD}S)`} onClick={onSave}>
         Save
       </button>

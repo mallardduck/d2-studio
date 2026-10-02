@@ -91,7 +91,9 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
     const matches = doc.length === diagnosticsSource.length && doc.toString() === diagnosticsSource;
     const marks = matches
       ? diagnostics
-          .filter((d) => d.hasLocation)
+          // Errors in an imported file carry that file's offsets, so they must
+          // not be drawn in this one.
+          .filter((d) => d.hasLocation && !d.path)
           .map((d) => {
             const from = Math.min(d.from, doc.length);
             const to = Math.min(Math.max(d.to, from + 1), doc.length);
