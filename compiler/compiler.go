@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 	"github.com/d2lang/d2/d2lib"
 	"github.com/d2lang/d2/d2plugin"
 	"github.com/d2lang/d2/d2renderers/d2svg"
+	"github.com/d2lang/d2/d2target"
 	"github.com/d2lang/d2/d2themes/d2themescatalog"
 	d2log "github.com/d2lang/d2/lib/log"
 	"github.com/d2lang/d2/lib/textmeasure"
@@ -54,8 +56,7 @@ func New(fsys fs.FS) (*Service, error) {
 func (s *Service) Compile(ctx context.Context, req Request) (*Result, error) {
 	seq := s.seq.Add(1)
 
-	// D2 expects a logger on the context; compiles are silent.
-	ctx = d2log.With(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx = quietContext(ctx)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	s.cancelMu.Lock()
@@ -105,26 +106,27 @@ func validateOptions(o Options) string {
 	return ""
 }
 
-func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (res *Result) {
-	// A panic inside a layout engine must not take down the desktop app.
-	defer func() {
-		if r := recover(); r != nil {
-			res = &Result{Seq: seq, Status: StatusError, Diagnostics: []Diagnostic{{
-				Severity: SeverityError,
-				Message:  fmt.Sprintf("internal compiler error: %v", r),
-			}}}
-		}
-	}()
+// compiled is the result of the D2 pipeline up to, but not including, SVG
+// rendering. It is what the live preview and the exporters both build on.
+type compiled struct {
+	diagram  *d2target.Diagram
+	copts    *d2lib.CompileOptions
+	ropts    *d2svg.RenderOpts
+	importFS fs.FS
+}
+
+// compileDiagram compiles req into a laid-out diagram. The caller must hold
+// s.run and call cleanup when done with the result. On failure it returns the
+// diagnostics to report; stale is true when ctx was canceled, in which case
+// there is nothing to report.
+func (s *Service) compileDiagram(ctx context.Context, req Request, ropts *d2svg.RenderOpts) (c *compiled, cleanup func(), diags []Diagnostic, stale bool) {
+	noop := func() {}
 	layoutResolver, routerResolver := resolvers()
 
 	importFS, closeFS, err := s.importFS(req)
 	if err != nil {
-		return &Result{Seq: seq, Status: StatusError, Diagnostics: []Diagnostic{{
-			Severity: SeverityError,
-			Message:  fmt.Sprintf("cannot prepare imports: %v", err),
-		}}}
+		return nil, noop, []Diagnostic{{Severity: SeverityError, Message: fmt.Sprintf("cannot prepare imports: %v", err)}}, false
 	}
-	defer closeFS()
 
 	copts := &d2lib.CompileOptions{
 		UTF16Pos:       true,
@@ -135,11 +137,6 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 		RouterResolver: routerResolver,
 		LayoutReuse:    true,
 	}
-	ropts := &d2svg.RenderOpts{
-		NoXMLTag:    go2.Pointer(true),
-		OmitVersion: go2.Pointer(true),
-	}
-
 	if req.Options.Layout != "" {
 		copts.Layout = go2.Pointer(lower(req.Options.Layout))
 	}
@@ -149,21 +146,19 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 	ropts.Sketch = req.Options.Sketch
 
 	if ctx.Err() != nil {
-		return &Result{Seq: seq, Status: StatusStale}
+		closeFS()
+		return nil, noop, nil, true
 	}
 	diagram, g, err := d2lib.Compile(ctx, req.Source, copts, ropts)
 	if err != nil || ctx.Err() != nil {
+		closeFS()
 		// D2 does not always notice cancellation on small graphs, so a
 		// canceled context is treated as stale even if compilation finished.
 		if ctx.Err() != nil || isCancellation(err) {
-			return &Result{Seq: seq, Status: StatusStale}
+			return nil, noop, nil, true
 		}
-		return &Result{Seq: seq, Status: StatusError, Diagnostics: diagnosticsFromError(err, req.Path)}
+		return nil, noop, diagnosticsFromError(err, req.Path), false
 	}
-
-	srcLayout, srcTheme := s.sourceConfig(req, importFS)
-	layoutSource := pickSource(req.Options.Layout != "", srcLayout != "")
-	themeSource := pickSource(req.Options.ThemeID != nil, srcTheme != nil)
 
 	// Mirror the D2 CLI: reject diagrams that use features the chosen
 	// engine cannot lay out, instead of rendering something wrong.
@@ -171,12 +166,50 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 		info, ierr := plugin.Info(ctx)
 		if ierr == nil {
 			if ferr := d2plugin.FeatureSupportCheck(info, g); ferr != nil {
-				return &Result{Seq: seq, Status: StatusError, Diagnostics: []Diagnostic{{Severity: SeverityError, Message: ferr.Error()}}}
+				closeFS()
+				return nil, noop, []Diagnostic{{Severity: SeverityError, Message: ferr.Error()}}, false
 			}
 		}
 	}
+	return &compiled{diagram: diagram, copts: copts, ropts: ropts, importFS: importFS}, closeFS, nil, false
+}
 
-	svg, err := d2svg.Render(diagram, ropts)
+// quietContext attaches the logger D2 expects on its context. Compiles are
+// silent; without it D2 prints a warning with a stack trace on every call.
+func quietContext(ctx context.Context) context.Context {
+	return d2log.With(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+func internalError(r any) []Diagnostic {
+	return []Diagnostic{{Severity: SeverityError, Message: fmt.Sprintf("internal compiler error: %v", r)}}
+}
+
+func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (res *Result) {
+	// A panic inside a layout engine must not take down the desktop app.
+	defer func() {
+		if r := recover(); r != nil {
+			res = &Result{Seq: seq, Status: StatusError, Diagnostics: internalError(r)}
+		}
+	}()
+
+	ropts := &d2svg.RenderOpts{
+		NoXMLTag:    go2.Pointer(true),
+		OmitVersion: go2.Pointer(true),
+	}
+	c, cleanup, diags, isStale := s.compileDiagram(ctx, req, ropts)
+	if isStale {
+		return &Result{Seq: seq, Status: StatusStale}
+	}
+	if diags != nil {
+		return &Result{Seq: seq, Status: StatusError, Diagnostics: diags}
+	}
+	defer cleanup()
+
+	srcLayout, srcTheme := s.sourceConfig(req, c.importFS)
+	layoutSource := pickSource(req.Options.Layout != "", srcLayout != "")
+	themeSource := pickSource(req.Options.ThemeID != nil, srcTheme != nil)
+
+	svg, err := d2svg.Render(c.diagram, ropts)
 	if err != nil {
 		return &Result{Seq: seq, Status: StatusError, Diagnostics: []Diagnostic{{Severity: SeverityError, Message: "render: " + err.Error()}}}
 	}
@@ -185,14 +218,14 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 	if ropts.ThemeID != nil {
 		themeID = *ropts.ThemeID
 	}
-	tl, br := diagram.BoundingBox()
+	tl, br := c.diagram.BoundingBox()
 	return &Result{
 		Seq:         seq,
 		Status:      StatusSuccess,
 		SVG:         string(svg),
 		Diagnostics: []Diagnostic{},
 		Meta: Meta{
-			Layout:        *copts.Layout,
+			Layout:        *c.copts.Layout,
 			ThemeID:       themeID,
 			LayoutSource:  layoutSource,
 			ThemeSource:   themeSource,
@@ -202,6 +235,57 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 			Height:        br.Y - tl.Y,
 		},
 	}
+}
+
+// ExportInput is a compiled diagram ready to be rendered to a file format.
+type ExportInput struct {
+	Diagram *d2target.Diagram
+	// Render holds the resolved theme, padding, sketch mode and so on.
+	Render d2svg.RenderOpts
+	// ImportRoot is the folder local images may be read from, or "" for an
+	// unsaved document.
+	ImportRoot string
+	// FileDir is the folder of the file being exported. Relative image paths
+	// in the diagram are relative to it. "" for an unsaved document.
+	FileDir string
+}
+
+// CompileForExport compiles req for export. Unlike Compile it does not take
+// part in stale-result tracking, so exporting never cancels or is cancelled
+// by the live preview. D2 errors come back as diagnostics, and the diagram is
+// nil in that case.
+func (s *Service) CompileForExport(ctx context.Context, req Request) (in *ExportInput, diags []Diagnostic, err error) {
+	if msg := validateOptions(req.Options); msg != "" {
+		return nil, []Diagnostic{{Severity: SeverityError, Message: msg}}, nil
+	}
+	ctx = quietContext(ctx)
+	s.run.Lock()
+	defer s.run.Unlock()
+	defer func() {
+		if r := recover(); r != nil {
+			in, diags, err = nil, internalError(r), nil
+		}
+	}()
+
+	ropts := &d2svg.RenderOpts{}
+	c, cleanup, diags, isStale := s.compileDiagram(ctx, req, ropts)
+	if isStale {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, context.Canceled
+	}
+	if diags != nil {
+		return nil, diags, nil
+	}
+	defer cleanup()
+	in = &ExportInput{Diagram: c.diagram, Render: *ropts, ImportRoot: ImportRoot(req.Path, req.Workspace)}
+	if req.Path != "" {
+		if abs, aerr := filepath.Abs(req.Path); aerr == nil {
+			in.FileDir = filepath.Dir(abs)
+		}
+	}
+	return in, nil, nil
 }
 
 // sourceConfig reports the layout engine and theme the .d2 source itself

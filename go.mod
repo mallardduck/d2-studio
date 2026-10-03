@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	codeberg.org/go-pdf/fpdf v0.12.0 // indirect
 	github.com/PuerkitoBio/goquery v1.12.0 // indirect
 	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
