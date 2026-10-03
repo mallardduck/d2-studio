@@ -13,10 +13,12 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FileBanner } from "./components/FileBanner";
 import { FileControls } from "./components/FileControls";
 import { Sidebar } from "./components/Sidebar";
+import { ExportMenu } from "./components/ExportMenu";
 import { useCompiler } from "./hooks/useCompiler";
 import { useConfirm } from "./hooks/useConfirm";
 import { useDocument } from "./hooks/useDocument";
 import { useWorkspace } from "./hooks/useWorkspace";
+import { useExport } from "./hooks/useExport";
 import { dirOf } from "./files/model";
 import { clampRatio, useSettings, type ViewMode } from "./hooks/useSettings";
 import { d2Language } from "./editor/d2lang";
@@ -45,6 +47,14 @@ export default function App() {
   const docs = useDocument({ content: source, setContent, confirm, initialContent: SAMPLE });
   const workspace = useWorkspace(settings, update);
   const view = useCompiler(source, options, docs.path ?? "", workspace.root, workspace.revision);
+  const exporter = useExport({
+    compile: { source, options, path: docs.path ?? "", workspace: workspace.root },
+    documentName: docs.name,
+    dir: dirOf(docs.path),
+    allowRemoteImages: settings?.exportRemoteImages ?? false,
+    notify: docs.notify,
+    showError: docs.showError,
+  });
 
   // While dragging, the ratio is local; it is persisted once on release.
   const [dragRatio, setDragRatio] = useState<number | null>(null);
@@ -119,6 +129,14 @@ export default function App() {
             onSaveAs={docs.saveAs}
             onOpenRecent={(f) => docs.openPath(f.path)}
             onOpenFolder={() => workspace.open(dirOf(docs.path))}
+            extra={
+              <ExportMenu
+                busy={exporter.busy}
+                fetchRemote={settings.exportRemoteImages}
+                onExport={exporter.run}
+                onToggleRemote={(exportRemoteImages) => update({ exportRemoteImages })}
+              />
+            }
           />
         }
         sidebarOpen={settings.sidebarOpen}

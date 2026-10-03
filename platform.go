@@ -1,6 +1,8 @@
 package main
 
 import (
+	"d2studio/export"
+
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -51,6 +53,28 @@ func (p *wailsPlatform) PickFolder(dir string) (string, error) {
 		CanChooseFiles(false).
 		CanChooseDirectories(true).
 		CanCreateDirectories(true)
+	if w := p.app.Window.Current(); w != nil {
+		d.AttachToWindow(w)
+	}
+	if dir != "" {
+		d.SetDirectory(dir)
+	}
+	return d.PromptForSingleSelection()
+}
+
+// PickExportFile implements export.Platform with a native save dialog that
+// offers only the chosen format.
+func (p *wailsPlatform) PickExportFile(dir, filename string, format export.Format) (string, error) {
+	labels := map[export.Format]string{
+		export.SVG: "SVG image (*.svg)",
+		export.PNG: "PNG image (*.png)",
+		export.PDF: "PDF document (*.pdf)",
+	}
+	d := p.app.Dialog.SaveFile().
+		SetMessage("Export diagram").
+		CanCreateDirectories(true).
+		AddFilter(labels[format], "*."+format.Extension()).
+		SetFilename(filename)
 	if w := p.app.Window.Current(); w != nil {
 		d.AttachToWindow(w)
 	}

@@ -12,12 +12,10 @@ type CompilerService struct {
 	svc *compiler.Service
 }
 
-func NewCompilerService() (*CompilerService, error) {
-	svc, err := compiler.New(nil)
-	if err != nil {
-		return nil, err
-	}
-	return &CompilerService{svc: svc}, nil
+// NewCompilerService wraps svc, which is shared with the exporter so that
+// previews and exports use one text-measuring ruler under one lock.
+func NewCompilerService(svc *compiler.Service) *CompilerService {
+	return &CompilerService{svc: svc}
 }
 
 // Compile compiles D2 source to SVG. D2 errors come back as diagnostics in

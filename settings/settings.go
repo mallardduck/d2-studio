@@ -33,6 +33,9 @@ type Settings struct {
 	Workspace string `json:"workspace"`
 	// SidebarOpen is whether the workspace sidebar is shown.
 	SidebarOpen bool `json:"sidebarOpen"`
+	// ExportRemoteImages lets PNG and PDF export download remote images such
+	// as icons. Off by default so exporting works offline.
+	ExportRemoteImages bool `json:"exportRemoteImages"`
 }
 
 // Defaults returns the settings used on first launch.

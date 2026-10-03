@@ -175,6 +175,27 @@ func Save(path, content string, opts SaveOptions) (*SaveResult, error) {
 	return &SaveResult{Saved: true, Version: versionOf(info, data)}, nil
 }
 
+// WriteBytes writes data to path atomically, for output files such as
+// exports. Like Save it goes through a temp file and a rename, so a failure
+// part-way never leaves a truncated file, writes through symlinks, and keeps
+// the permissions of a file it replaces. It does not check for conflicts: the
+// caller has already confirmed the destination (a native save dialog asks
+// before overwriting).
+func WriteBytes(path string, data []byte) error {
+	target, err := resolveTarget(path)
+	if err != nil {
+		return friendly(path, err)
+	}
+	mode := fs.FileMode(0o644)
+	if info, err := os.Stat(target); err == nil {
+		mode = info.Mode().Perm()
+	}
+	if err := writeAtomic(target, data, mode); err != nil {
+		return friendly(path, err)
+	}
+	return nil
+}
+
 // checkConflict returns a non-nil result when the on-disk file no longer
 // matches base.
 func checkConflict(target string, base Version) (*SaveResult, error) {

@@ -298,3 +298,67 @@ func TestSaveRejectsEmptyPath(t *testing.T) {
 		t.Fatal("expected an error")
 	}
 }
+
+func TestWriteBytes(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "out.png")
+	data := []byte{0x89, 'P', 'N', 'G', 0, 1, 2, 0xff}
+
+	if err := WriteBytes(p, data); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(p); !bytes.Equal(got, data) {
+		t.Fatalf("file = %v, want %v", got, data)
+	}
+	// Overwrites, leaving no temp files.
+	if err := WriteBytes(p, []byte("second")); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(p); string(got) != "second" {
+		t.Fatalf("file = %q", got)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatalf("directory contents: %v", entries)
+	}
+}
+
+func TestWriteBytesFailureLeavesNothingAndReportsAnError(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteBytes(filepath.Join(dir, "missing", "out.png"), []byte("x")); err == nil {
+		t.Fatal("expected an error")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("left behind: %v", entries)
+	}
+	if err := WriteBytes("", []byte("x")); err == nil {
+		t.Fatal("empty path should fail")
+	}
+}
+
+func TestWriteBytesKeepsPermissionsAndWritesThroughSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions and symlinks")
+	}
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.png")
+	link := filepath.Join(dir, "link.png")
+	write(t, real, "old")
+	if err := os.Chmod(real, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteBytes(link, []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	if info, _ := os.Lstat(link); info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("the symlink was replaced")
+	}
+	if b, _ := os.ReadFile(real); string(b) != "new" {
+		t.Fatalf("target = %q", b)
+	}
+	if info, _ := os.Stat(real); info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %v", info.Mode().Perm())
+	}
+}

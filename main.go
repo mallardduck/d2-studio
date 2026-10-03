@@ -4,6 +4,8 @@ import (
 	"embed"
 	"log"
 
+	"d2studio/compiler"
+	"d2studio/export"
 	"d2studio/files"
 	"d2studio/settings"
 	"d2studio/workspace"
@@ -25,10 +27,11 @@ func init() {
 }
 
 func main() {
-	compilerService, err := NewCompilerService()
+	compilerCore, err := compiler.New(nil)
 	if err != nil {
 		log.Fatal(err)
 	}
+	compilerService := NewCompilerService(compilerCore)
 
 	// shouldQuit is set once the app exists; options need it first.
 	var shouldQuit func() bool
@@ -70,6 +73,7 @@ func main() {
 	app.RegisterService(application.NewService(fileService))
 	workspaceService := workspace.NewService(&wailsPlatform{app: app}, workspace.DefaultLimits, workspace.DefaultPollInterval)
 	app.RegisterService(application.NewService(workspaceService))
+	app.RegisterService(application.NewService(export.NewService(compilerCore, &wailsPlatform{app: app})))
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "D2 Studio",

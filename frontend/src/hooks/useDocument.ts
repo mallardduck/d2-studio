@@ -305,6 +305,10 @@ export function useDocument({ content, setContent, confirm, initialContent }: De
     notice,
     encoding: encodingLabel(doc),
     dismissBanner: () => setBanner(null),
+    /** Show a transient message in the status bar. */
+    notify: flash,
+    /** Show a non-blocking error banner. */
+    showError: (text: string) => setBanner({ kind: "error", message: text }),
     keepMine,
     newDocument,
     open,
