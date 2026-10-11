@@ -18,6 +18,15 @@ const (
 
 	MinSplitRatio = 0.15
 	MaxSplitRatio = 0.85
+
+	// Autosave modes.
+	AutosaveOff   = "off"   // never (the default)
+	AutosaveDelay = "delay" // after the user has stopped typing for AutosaveDelaySec
+	AutosaveBlur  = "blur"  // when the window loses focus
+
+	DefaultAutosaveDelaySec = 2
+	MinAutosaveDelaySec     = 1
+	MaxAutosaveDelaySec     = 60
 )
 
 // Settings are the persisted preferences. Zero values mean "not chosen".
@@ -33,6 +42,11 @@ type Settings struct {
 	Workspace string `json:"workspace"`
 	// SidebarOpen is whether the workspace sidebar is shown.
 	SidebarOpen bool `json:"sidebarOpen"`
+	// Autosave is one of the Autosave* modes. It only applies to files that
+	// have been saved at least once.
+	Autosave string `json:"autosave"`
+	// AutosaveDelaySec is the idle time before an AutosaveDelay save.
+	AutosaveDelaySec int `json:"autosaveDelaySec"`
 	// ExportRemoteImages lets PNG and PDF export download remote images such
 	// as icons. Off by default so exporting works offline.
 	ExportRemoteImages bool `json:"exportRemoteImages"`
@@ -40,7 +54,7 @@ type Settings struct {
 
 // Defaults returns the settings used on first launch.
 func Defaults() Settings {
-	return Settings{ViewMode: ViewSplit, SplitRatio: 0.5, SidebarOpen: true}
+	return Settings{ViewMode: ViewSplit, SplitRatio: 0.5, SidebarOpen: true, Autosave: AutosaveOff, AutosaveDelaySec: DefaultAutosaveDelaySec}
 }
 
 // Normalize replaces invalid values with defaults and clamps the split ratio,
@@ -51,6 +65,19 @@ func (s Settings) Normalize() Settings {
 	case ViewSource, ViewSplit, ViewPreview:
 	default:
 		s.ViewMode = d.ViewMode
+	}
+	switch s.Autosave {
+	case AutosaveOff, AutosaveDelay, AutosaveBlur:
+	default:
+		s.Autosave = d.Autosave // unknown values never turn autosave on
+	}
+	switch {
+	case s.AutosaveDelaySec <= 0:
+		s.AutosaveDelaySec = d.AutosaveDelaySec
+	case s.AutosaveDelaySec < MinAutosaveDelaySec:
+		s.AutosaveDelaySec = MinAutosaveDelaySec
+	case s.AutosaveDelaySec > MaxAutosaveDelaySec:
+		s.AutosaveDelaySec = MaxAutosaveDelaySec
 	}
 	switch {
 	case !(s.SplitRatio > 0): // unset, negative or NaN

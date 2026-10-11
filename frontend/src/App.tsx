@@ -13,6 +13,7 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FileBanner } from "./components/FileBanner";
 import { FileControls } from "./components/FileControls";
 import { Sidebar } from "./components/Sidebar";
+import { AutosaveMenu } from "./components/AutosaveMenu";
 import { ExportMenu } from "./components/ExportMenu";
 import { useCompiler } from "./hooks/useCompiler";
 import { useConfirm } from "./hooks/useConfirm";
@@ -44,7 +45,13 @@ export default function App() {
     editor.current?.setDoc(text);
     setSource(text);
   }, []);
-  const docs = useDocument({ content: source, setContent, confirm, initialContent: SAMPLE });
+  const docs = useDocument({
+    content: source,
+    setContent,
+    confirm,
+    initialContent: SAMPLE,
+    autosave: settings ? { mode: settings.autosave, delaySec: settings.autosaveDelaySec } : undefined,
+  });
   const workspace = useWorkspace(settings, update);
   const view = useCompiler(source, options, docs.path ?? "", workspace.root, workspace.revision);
   const exporter = useExport({
@@ -130,12 +137,19 @@ export default function App() {
             onOpenRecent={(f) => docs.openPath(f.path)}
             onOpenFolder={() => workspace.open(dirOf(docs.path))}
             extra={
-              <ExportMenu
-                busy={exporter.busy}
-                fetchRemote={settings.exportRemoteImages}
-                onExport={exporter.run}
-                onToggleRemote={(exportRemoteImages) => update({ exportRemoteImages })}
-              />
+              <>
+                <AutosaveMenu
+                  mode={settings.autosave}
+                  delaySec={settings.autosaveDelaySec}
+                  onChange={(c) => update({ autosave: c.mode, autosaveDelaySec: c.delaySec })}
+                />
+                <ExportMenu
+                  busy={exporter.busy}
+                  fetchRemote={settings.exportRemoteImages}
+                  onExport={exporter.run}
+                  onToggleRemote={(exportRemoteImages) => update({ exportRemoteImages })}
+                />
+              </>
             }
           />
         }

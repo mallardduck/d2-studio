@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DialogSpec } from "../components/ConfirmDialog";
 
 const h = vi.hoisted(() => ({ handlers: {} as Record<string, (ev: { data?: unknown }) => unknown> }));
@@ -55,12 +55,12 @@ function scriptedConfirm(...choices: string[]) {
  * Mounts the hook clean, opens "/w/a.d2" (saved text "saved"), then puts the
  * editor on `content`, the way a real edit would.
  */
-async function mountWithFile(content = "saved", choices: string[] = []) {
+async function mountWithFile(content = "saved", choices: string[] = [], autosave?: { mode: string; delaySec: number }) {
   const { confirm, shown } = scriptedConfirm(...choices);
   const setContent = vi.fn();
   vi.mocked(OpenDialog).mockResolvedValueOnce({ cancelled: false, document: fileDoc("/w/a.d2", "saved") });
   const hook = renderHook(
-    ({ text }) => useDocument({ content: text, setContent, confirm, initialContent: "init" }),
+    ({ text }) => useDocument({ content: text, setContent, confirm, initialContent: "init", autosave }),
     { initialProps: { text: "init" } },
   );
   await act(async () => {
@@ -370,5 +370,204 @@ describe("quitting", () => {
     await mountWithFile("edited", ["save"]);
     await requestClose();
     expect(ConfirmQuit).not.toHaveBeenCalled();
+  });
+});
+
+describe("autosave", () => {
+  const delay = { mode: "delay", delaySec: 2 };
+  const saved = (hash = "h2") => ({ saved: true, conflict: "", version: v(hash) });
+  const advance = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("does nothing when it is off", async () => {
+    const t = await mountWithFile("edited", [], { mode: "off", delaySec: 2 });
+    await advance(60_000);
+    expect(Save).not.toHaveBeenCalled();
+    expect(t.result.current.dirty).toBe(true);
+  });
+
+  it("saves after the typing pause, using the normal conflict check", async () => {
+    vi.mocked(Save).mockResolvedValueOnce(saved());
+    const t = await mountWithFile("edited", [], delay);
+    await advance(1_900);
+    expect(Save).not.toHaveBeenCalled();
+    await advance(200);
+    expect(Save).toHaveBeenCalledTimes(1);
+    expect(Save).toHaveBeenCalledWith("/w/a.d2", "edited", {
+      base: v("h1"),
+      force: false,
+      lineEnding: "lf",
+      bom: false,
+    });
+    expect(t.result.current.dirty).toBe(false);
+    expect(t.result.current.notice).toContain("Autosaved");
+  });
+
+  it("waits for a pause: every keystroke restarts the timer", async () => {
+    vi.mocked(Save).mockResolvedValue(saved());
+    const t = await mountWithFile("a", [], delay);
+    for (const text of ["ab", "abc", "abcd"]) {
+      await advance(1_500);
+      t.edit(text);
+    }
+    expect(Save).not.toHaveBeenCalled(); // never idle for 2s
+    await advance(2_100);
+    expect(Save).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(Save).mock.calls[0][1]).toBe("abcd");
+  });
+
+  it("never autosaves a document that has not been saved yet", async () => {
+    const setContent = vi.fn();
+    const { result } = renderHook(() =>
+      useDocument({ content: "typed", setContent, confirm: vi.fn(), initialContent: "", autosave: delay }),
+    );
+    await advance(60_000);
+    expect(Save).not.toHaveBeenCalled();
+    expect(SaveAs).not.toHaveBeenCalled(); // and no dialog ever opens by itself
+    expect(result.current.dirty).toBe(true);
+  });
+
+  it("never overwrites a file that changed on disk: it shows the banner and stops", async () => {
+    vi.mocked(Save).mockResolvedValue({ saved: false, conflict: "modified", version: v("theirs") });
+    const t = await mountWithFile("edited", [], delay);
+    await advance(2_100);
+    expect(Save).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(Save).mock.calls[0][2]).toMatchObject({ force: false });
+    expect(t.result.current.banner).toMatchObject({ kind: "modified" });
+
+    await advance(60_000);
+    expect(Save).toHaveBeenCalledTimes(1); // no retry, and never a forced write
+    expect(t.confirm).not.toHaveBeenCalled(); // and no dialog mid-typing
+  });
+
+  it("a deleted file also stops autosave with the usual banner", async () => {
+    vi.mocked(Save).mockResolvedValue({ saved: false, conflict: "deleted", version: v("") });
+    const t = await mountWithFile("edited", [], delay);
+    await advance(2_100);
+    expect(t.result.current.banner).toEqual({ kind: "deleted" });
+    await advance(60_000);
+    expect(Save).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not write while an external-change warning is showing", async () => {
+    const t = await mountWithFile("my edits", [], delay);
+    await act(
+      async () =>
+        void (await h.handlers["file:changed"]({
+          data: { path: "/w/a.d2", kind: "modified", version: v("x"), message: "" },
+        })),
+    );
+    expect(t.result.current.banner).toMatchObject({ kind: "modified" });
+    await advance(60_000);
+    expect(Save).not.toHaveBeenCalled();
+  });
+
+  it("after the user chooses Keep my edits, autosave may save (their explicit choice)", async () => {
+    vi.mocked(Save).mockResolvedValue(saved("z"));
+    const t = await mountWithFile("my edits", [], delay);
+    await act(
+      async () =>
+        void (await h.handlers["file:changed"]({
+          data: { path: "/w/a.d2", kind: "modified", version: v("theirs"), message: "" },
+        })),
+    );
+    act(() => t.result.current.keepMine(v("theirs")));
+    await advance(2_100);
+    expect(Save).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(Save).mock.calls[0][2]).toMatchObject({ base: v("theirs"), force: false });
+  });
+
+  it("a failed autosave is reported once and not retried until the text changes", async () => {
+    vi.mocked(Save).mockRejectedValue(new Error("disk full"));
+    const t = await mountWithFile("edited", [], delay);
+    await advance(2_100);
+    expect(t.result.current.banner).toEqual({ kind: "error", message: "Autosave failed: disk full" });
+    await advance(60_000);
+    expect(Save).toHaveBeenCalledTimes(1);
+
+    vi.mocked(Save).mockResolvedValueOnce(saved());
+    t.edit("edited more");
+    await advance(2_100);
+    expect(Save).toHaveBeenCalledTimes(2);
+    expect(t.result.current.banner).toBeNull(); // the old error clears once saving works
+  });
+
+  it("saves when the window loses focus in blur mode, and only then", async () => {
+    vi.mocked(Save).mockResolvedValue(saved());
+    const t = await mountWithFile("edited", [], { mode: "blur", delaySec: 2 });
+    await advance(60_000);
+    expect(Save).not.toHaveBeenCalled(); // no timer in this mode
+    await act(async () => void window.dispatchEvent(new Event("blur")));
+    expect(Save).toHaveBeenCalledTimes(1);
+    expect(t.result.current.dirty).toBe(false);
+  });
+
+  it("does not save in blur mode when there is nothing to save", async () => {
+    const t = await mountWithFile("saved", [], { mode: "blur", delaySec: 2 });
+    await act(async () => void window.dispatchEvent(new Event("blur")));
+    expect(Save).not.toHaveBeenCalled();
+    expect(t.result.current.dirty).toBe(false);
+  });
+
+  it("saves quietly before New/Open/quit instead of asking", async () => {
+    vi.mocked(Save).mockResolvedValueOnce(saved());
+    const t = await mountWithFile("edited", [], delay);
+    await act(async () => void (await t.result.current.newDocument()));
+    expect(t.confirm).not.toHaveBeenCalled();
+    expect(Save).toHaveBeenCalledTimes(1);
+    expect(t.setContent).toHaveBeenCalledWith("");
+  });
+
+  it("still asks before discarding when the quiet save hits a conflict", async () => {
+    vi.mocked(Save).mockResolvedValue({ saved: false, conflict: "modified", version: v("theirs") });
+    const t = await mountWithFile("edited", ["cancel"], delay);
+    await act(async () => void (await t.result.current.newDocument()));
+    expect(t.confirm).toHaveBeenCalled(); // the usual Save / Don't save / Cancel
+    expect(t.setContent).not.toHaveBeenCalled();
+    expect(vi.mocked(Save).mock.calls.every((c) => c[2].force === false)).toBe(true);
+  });
+
+  it("still asks before quitting when the quiet save fails", async () => {
+    vi.mocked(Save).mockRejectedValue(new Error("read-only"));
+    const t = await mountWithFile("edited", ["cancel"], delay);
+    await act(async () => void (await h.handlers["app:close-requested"]({})));
+    expect(t.confirm).toHaveBeenCalled();
+    expect(ConfirmQuit).not.toHaveBeenCalled();
+  });
+
+  it("serializes with a manual save so writes cannot finish out of order", async () => {
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+    vi.mocked(Save)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            order.push("start:auto");
+            releaseFirst = () => {
+              order.push("end:auto");
+              resolve(saved("h2"));
+            };
+          }) as never,
+      )
+      .mockImplementationOnce((() => {
+        order.push("start:manual");
+        return Promise.resolve(saved("h3"));
+      }) as never);
+    const t = await mountWithFile("v1", [], delay);
+    await advance(2_100); // autosave begins and is still in flight
+    let manual!: Promise<boolean>;
+    act(() => {
+      t.edit("v2");
+      manual = t.result.current.save();
+    });
+    await advance(10);
+    expect(order).toEqual(["start:auto"]); // the manual save waits its turn
+    await act(async () => {
+      releaseFirst();
+      await manual;
+    });
+    expect(order).toEqual(["start:auto", "end:auto", "start:manual"]);
   });
 });

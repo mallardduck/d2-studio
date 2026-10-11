@@ -140,3 +140,43 @@ func TestSidebarDefaultsOpenAndWorkspaceIsRemembered(t *testing.T) {
 		t.Fatalf("round trip: %+v", again)
 	}
 }
+
+func TestAutosaveIsOffByDefault(t *testing.T) {
+	d := Defaults()
+	if d.Autosave != AutosaveOff || d.AutosaveDelaySec != DefaultAutosaveDelaySec {
+		t.Fatalf("defaults = %+v", d)
+	}
+	// A settings file from before autosave existed must not turn it on.
+	st, p := newStore(t)
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	_ = os.WriteFile(p, []byte(`{"viewMode":"split","splitRatio":0.5}`), 0o644)
+	got, err := st.Load()
+	if err != nil || got.Autosave != AutosaveOff {
+		t.Fatalf("got %+v err=%v", got, err)
+	}
+}
+
+func TestAutosaveNormalization(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       Settings
+		mode     string
+		delaySec int
+	}{
+		{"valid delay", Settings{Autosave: AutosaveDelay, AutosaveDelaySec: 10}, AutosaveDelay, 10},
+		{"valid blur", Settings{Autosave: AutosaveBlur, AutosaveDelaySec: 2}, AutosaveBlur, 2},
+		{"unknown mode is off", Settings{Autosave: "always", AutosaveDelaySec: 2}, AutosaveOff, 2},
+		{"empty mode is off", Settings{AutosaveDelaySec: 2}, AutosaveOff, 2},
+		{"zero delay uses the default", Settings{Autosave: AutosaveDelay}, AutosaveDelay, DefaultAutosaveDelaySec},
+		{"negative delay uses the default", Settings{Autosave: AutosaveDelay, AutosaveDelaySec: -5}, AutosaveDelay, DefaultAutosaveDelaySec},
+		{"huge delay is capped", Settings{Autosave: AutosaveDelay, AutosaveDelaySec: 100000}, AutosaveDelay, MaxAutosaveDelaySec},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := c.in.Normalize()
+			if got.Autosave != c.mode || got.AutosaveDelaySec != c.delaySec {
+				t.Fatalf("got %q %d, want %q %d", got.Autosave, got.AutosaveDelaySec, c.mode, c.delaySec)
+			}
+		})
+	}
+}

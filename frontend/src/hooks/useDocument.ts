@@ -29,6 +29,8 @@ interface Deps {
   confirm: (spec: DialogSpec) => Promise<string>;
   /** Text of the untouched starting document, which counts as saved. */
   initialContent: string;
+  /** When to save automatically. Only ever applies to a file that already has a path. */
+  autosave?: { mode: string; delaySec: number };
 }
 
 const NOTICE_MS = 5000;
@@ -61,7 +63,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * that unsaved editor content is never discarded or overwritten without an
  * explicit choice by the user.
  */
-export function useDocument({ content, setContent, confirm, initialContent }: Deps) {
+export function useDocument({ content, setContent, confirm, initialContent, autosave }: Deps) {
   const [doc, setDoc] = useState<DocState>(() => untitled(initialContent));
   const [banner, setBanner] = useState<Banner | null>(null);
   const [notice, setNotice] = useState("");
@@ -69,8 +71,22 @@ export function useDocument({ content, setContent, confirm, initialContent }: De
   const dirty = content !== doc.savedContent;
 
   // Event handlers and async flows read the latest values through refs.
-  const live = useRef({ doc, content, dirty });
-  live.current = { doc, content, dirty };
+  const live = useRef({ doc, content, dirty, banner });
+  live.current = { doc, content, dirty, banner };
+
+  // Manual and automatic saves must not interleave: two writes finishing out
+  // of order could leave the file holding older text than the editor thinks.
+  const writeQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const exclusive = useCallback(<T,>(fn: () => Promise<T>): Promise<T> => {
+    const run = writeQueue.current.then(fn);
+    writeQueue.current = run.catch(() => undefined);
+    return run;
+  }, []);
+  // The text an automatic save last failed or conflicted on. It is not retried
+  // until the text changes or the user resolves the problem.
+  const autosaveBlockedFor = useRef<string | null>(null);
+  const autosaveMode = useRef(autosave?.mode ?? "off");
+  autosaveMode.current = autosave?.mode ?? "off";
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const flash = useCallback((text: string) => {
@@ -86,6 +102,7 @@ export function useDocument({ content, setContent, confirm, initialContent }: De
       setContent(d.content);
       setDoc(fromDocument(d));
       setBanner(null);
+      autosaveBlockedFor.current = null;
     },
     [setContent],
   );
@@ -174,9 +191,10 @@ export function useDocument({ content, setContent, confirm, initialContent }: De
       const { doc: d, content: text } = live.current;
       if (!d.path) return saveAs();
       try {
-        const res = await Save(d.path, text, options(d, force));
+        const res = await exclusive(() => Save(d.path!, text, options(d, force)));
         if (!res) return false;
         if (res.saved) {
+          autosaveBlockedFor.current = null;
           setDoc((cur) => ({ ...cur, version: res.version, savedContent: text }));
           setBanner(null);
           flash(`Saved ${d.name}`);
@@ -188,13 +206,49 @@ export function useDocument({ content, setContent, confirm, initialContent }: De
         return false;
       }
     },
-    [fail, flash, resolveConflict, saveAs],
+    [exclusive, fail, flash, resolveConflict, saveAs],
   );
+
+  /**
+   * Saves the open file without asking, if that is safe. Returns the text it
+   * saved, or null when it did nothing. It never forces: if the file changed
+   * or vanished on disk it shows the usual banner and stops, so it can never
+   * overwrite someone else's changes.
+   */
+  const autosaveNow = useCallback(async (): Promise<string | null> => {
+    const { doc: d, content: text, dirty: isDirty, banner: b } = live.current;
+    if (!d.path || !isDirty) return null; // an unsaved document has nowhere to go
+    if (b && b.kind !== "error") return null; // an unresolved external change
+    if (autosaveBlockedFor.current === text) return null;
+    try {
+      const res = await exclusive(() => Save(d.path!, text, options(d, false)));
+      if (!res) return null;
+      if (res.saved) {
+        setDoc((cur) => ({ ...cur, version: res.version, savedContent: text }));
+        setBanner((cur) => (cur?.kind === "error" ? null : cur));
+        flash(`Autosaved ${d.name}`);
+        return text;
+      }
+      autosaveBlockedFor.current = text;
+      setBanner(res.conflict === "deleted" ? { kind: "deleted" } : { kind: "modified", version: res.version });
+      return null;
+    } catch (e) {
+      autosaveBlockedFor.current = text;
+      fail("Autosave failed", e);
+      return null;
+    }
+  }, [exclusive, fail, flash]);
 
   /** True when it is safe to replace the current document. */
   const guard = useCallback(async (): Promise<boolean> => {
     const { doc: d, dirty: isDirty } = live.current;
     if (!isDirty) return true;
+    // With autosave on, save quietly first. If that works and nothing was
+    // typed meanwhile there is nothing to ask; otherwise fall back to asking.
+    if (autosaveMode.current !== "off") {
+      const saved = await autosaveNow();
+      if (saved !== null && live.current.content === saved) return true;
+    }
     const choice = await confirm({
       title: `Save changes to “${d.name}”?`,
       message: "Your changes will be lost if you don't save them.",
@@ -207,7 +261,7 @@ export function useDocument({ content, setContent, confirm, initialContent }: De
     });
     if (choice === "save") return save();
     return choice === "discard";
-  }, [confirm, save]);
+  }, [autosaveNow, confirm, save]);
 
   const newDocument = useCallback(async () => {
     if (!(await guard())) return;
@@ -247,6 +301,7 @@ export function useDocument({ content, setContent, confirm, initialContent }: De
     // choice to overwrite it, not a conflict.
     setDoc((cur) => ({ ...cur, version }));
     setBanner(null);
+    autosaveBlockedFor.current = null;
   }, []);
 
   // External changes to the open file.
@@ -289,6 +344,30 @@ export function useDocument({ content, setContent, confirm, initialContent }: De
       }
     });
   }, [guard]);
+
+  // Autosave after a pause in typing. The timer restarts on every edit, so it
+  // never fires mid-sentence.
+  const delaySec = autosave?.delaySec ?? 2;
+  const autosaveIsDelay = autosave?.mode === "delay";
+  useEffect(() => {
+    if (!autosaveIsDelay || !dirty || !doc.path) return;
+    const timer = setTimeout(() => void autosaveNow(), delaySec * 1000);
+    return () => clearTimeout(timer);
+  }, [autosaveIsDelay, delaySec, dirty, doc.path, content, banner, autosaveNow]);
+
+  // Autosave when the window loses focus or is hidden.
+  const autosaveIsBlur = autosave?.mode === "blur";
+  useEffect(() => {
+    if (!autosaveIsBlur) return;
+    const run = () => void autosaveNow();
+    const onVisibility = () => document.visibilityState === "hidden" && run();
+    window.addEventListener("blur", run);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("blur", run);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [autosaveIsBlur, autosaveNow]);
 
   // Window title shows the file and an unsaved-changes dot.
   useEffect(() => {

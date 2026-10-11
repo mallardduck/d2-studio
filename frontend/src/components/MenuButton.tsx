@@ -8,11 +8,11 @@ interface Props {
   disabled?: boolean;
   /** Called each time the menu opens, e.g. to refresh its contents. */
   onOpen?: () => void;
-  /** Menu contents. Items should use role="menuitem" or "menuitemcheckbox". */
+  /** Menu contents. Items should use role="menuitem", "menuitemcheckbox" or "menuitemradio". */
   children: (close: () => void) => ReactNode;
 }
 
-const ITEM = '[role="menuitem"], [role="menuitemcheckbox"]';
+const ITEM = '[role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]';
 
 /**
  * A button that opens a menu: closes on Escape (returning focus to the
