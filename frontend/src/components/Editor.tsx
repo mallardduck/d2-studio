@@ -1,8 +1,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorView, basicSetup } from "codemirror";
+import { redo, undo } from "@codemirror/commands";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { setDiagnostics, lintGutter } from "@codemirror/lint";
 import { TAB_HELP, tabKeys } from "../editor/tabKey";
+import { historyStatus, type HistoryStatus } from "../editor/history";
 import type { Diagnostic as D2Diagnostic } from "../../bindings/d2studio/compiler/models";
 
 export interface EditorHandle {
@@ -10,6 +12,9 @@ export interface EditorHandle {
   reveal(from: number, to: number): void;
   /** Replace the whole document with a fresh state (new undo history). */
   setDoc(text: string): void;
+  /** The same undo and redo the keyboard uses, so menu and shortcut agree. */
+  undo(): void;
+  redo(): void;
 }
 
 interface Props {
@@ -20,6 +25,8 @@ interface Props {
   diagnosticsSource: string;
   /** D2 language support; plain text until D2's vocabulary has loaded. */
   language?: Extension;
+  /** Called when whether there is anything to undo or redo changes. */
+  onHistoryChange?: (status: HistoryStatus) => void;
 }
 
 const theme = EditorView.theme({
@@ -36,7 +43,7 @@ const theme = EditorView.theme({
 });
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor(
-  { initialDoc, onChange, diagnostics, diagnosticsSource, language },
+  { initialDoc, onChange, diagnostics, diagnosticsSource, language, onHistoryChange },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
@@ -47,6 +54,18 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
 
   const languageRef = useRef(language);
   languageRef.current = language;
+
+  // Report undo/redo availability, but only when it actually changes.
+  const onHistoryRef = useRef(onHistoryChange);
+  onHistoryRef.current = onHistoryChange;
+  const lastHistory = useRef<HistoryStatus>({ canUndo: false, canRedo: false });
+  const reportHistory = useCallback((state: EditorState) => {
+    const next = historyStatus(state);
+    if (next.canUndo !== lastHistory.current.canUndo || next.canRedo !== lastHistory.current.canRedo) {
+      lastHistory.current = next;
+      onHistoryRef.current?.(next);
+    }
+  }, []);
 
   // Built on demand so a new document starts with the current language.
   const makeExtensions = useCallback(
@@ -59,9 +78,10 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
       EditorView.contentAttributes.of({ "aria-label": "D2 source", "aria-describedby": "editor-tab-help" }),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) onChangeRef.current(u.state.doc.toString());
+        reportHistory(u.state);
       }),
     ],
-    [],
+    [reportHistory],
   );
 
   useEffect(() => {
@@ -107,7 +127,21 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
     setDoc(text) {
       // A new state, not a transaction, so undo cannot cross into the
       // previous document.
-      view.current?.setState(EditorState.create({ doc: text, extensions: makeExtensions() }));
+      const state = EditorState.create({ doc: text, extensions: makeExtensions() });
+      view.current?.setState(state);
+      reportHistory(state); // a new document starts with nothing to undo
+    },
+    undo() {
+      if (view.current) {
+        undo(view.current);
+        view.current.focus();
+      }
+    },
+    redo() {
+      if (view.current) {
+        redo(view.current);
+        view.current.focus();
+      }
     },
     reveal(from, to) {
       const v = view.current;

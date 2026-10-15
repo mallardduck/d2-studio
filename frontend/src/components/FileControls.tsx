@@ -1,42 +1,29 @@
 import type { ReactNode } from "react";
-import type { RecentFile } from "../../bindings/d2studio/files/models";
-import { RecentMenu } from "./RecentMenu";
 
 interface Props {
-  onNew: () => void;
   onOpen: () => void;
   onSave: () => void;
-  onSaveAs: () => void;
-  onOpenRecent: (file: RecentFile) => void;
-  onOpenFolder: () => void;
-  /** Extra controls after Save As, e.g. the Export menu. */
+  /** Extra controls after Save, e.g. the Export menu. */
   extra?: ReactNode;
 }
 
 const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
 const MOD = isMac ? "⌘" : "Ctrl+";
-const SHIFT = isMac ? "⇧" : "Shift+";
 
 const btn = "rounded px-2 py-1 hover:bg-line/40";
 
-export function FileControls({ onNew, onOpen, onSave, onSaveAs, onOpenRecent, onOpenFolder, extra }: Props) {
+/**
+ * The file actions used most often. Everything else (New, Save As, recent
+ * files, folders, autosave) lives in the File menu.
+ */
+export function FileControls({ onOpen, onSave, extra }: Props) {
   return (
     <div role="group" aria-label="File" className="flex items-center gap-0.5">
-      <button type="button" className={btn} title={`New (${MOD}N)`} onClick={onNew}>
-        New
-      </button>
       <button type="button" className={btn} title={`Open… (${MOD}O)`} onClick={onOpen}>
         Open…
       </button>
-      <RecentMenu onOpen={onOpenRecent} />
-      <button type="button" className={btn} title={`Open folder… (${MOD}${SHIFT}O)`} onClick={onOpenFolder}>
-        Folder…
-      </button>
       <button type="button" className={btn} title={`Save (${MOD}S)`} onClick={onSave}>
         Save
-      </button>
-      <button type="button" className={btn} title={`Save As… (${MOD}${SHIFT}S)`} onClick={onSaveAs}>
-        Save As…
       </button>
       {extra}
     </div>

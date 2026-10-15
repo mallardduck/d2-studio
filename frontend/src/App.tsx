@@ -6,20 +6,24 @@ import { Editor, type EditorHandle } from "./components/Editor";
 import { Preview } from "./components/Preview";
 import { Diagnostics } from "./components/Diagnostics";
 import { StatusBar } from "./components/StatusBar";
-import { Toolbar, MODES } from "./components/Toolbar";
+import { Toolbar } from "./components/Toolbar";
 import { OptionsBar } from "./components/OptionsBar";
 import { SplitDivider } from "./components/SplitDivider";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FileBanner } from "./components/FileBanner";
 import { FileControls } from "./components/FileControls";
 import { Sidebar } from "./components/Sidebar";
-import { AutosaveMenu } from "./components/AutosaveMenu";
 import { ExportMenu } from "./components/ExportMenu";
 import { useCompiler } from "./hooks/useCompiler";
 import { useConfirm } from "./hooks/useConfirm";
 import { useDocument } from "./hooks/useDocument";
 import { useWorkspace } from "./hooks/useWorkspace";
 import { useExport } from "./hooks/useExport";
+import { useMenu } from "./hooks/useMenu";
+import type { MenuActionType } from "./menu/actions";
+import type { State as MenuState } from "../bindings/d2studio/menu/models";
+import { ClearRecent } from "../bindings/d2studio/files/service";
+import type { HistoryStatus } from "./editor/history";
 import { dirOf } from "./files/model";
 import { clampRatio, useSettings, type ViewMode } from "./hooks/useSettings";
 import { d2Language } from "./editor/d2lang";
@@ -33,6 +37,7 @@ export default function App() {
   const [engines, setEngines] = useState<Engine[]>([]);
   const [language, setLanguage] = useState<Extension>();
   const [zoom, setZoom] = useState<number | null>(null);
+  const [history, setHistory] = useState<HistoryStatus>({ canUndo: false, canRedo: false });
   const { settings, update, saveError } = useSettings();
 
   // Empty layout / null theme mean "follow the D2 source, else D2's default".
@@ -72,39 +77,78 @@ export default function App() {
     Language().then((l) => setLanguage(d2Language(l)));
   }, []);
 
-  // Cmd/Ctrl+N, O, S, Shift+S, Shift+O (folder) and B (sidebar).
-  const { newDocument, open, save, saveAs } = docs;
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-      const k = e.key.toLowerCase();
-      if (k === "s") e.shiftKey ? saveAs() : save();
-      else if (k === "o" && e.shiftKey) workspace.open(dirOf(docs.path));
-      else if (k === "b" && !e.shiftKey) update({ sidebarOpen: !(settings?.sidebarOpen ?? true) });
-      else if (k === "o" && !e.shiftKey) open();
-      else if (k === "n" && !e.shiftKey) newDocument();
-      else return;
-      e.preventDefault();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [newDocument, open, save, saveAs, workspace.open, docs.path, update, settings?.sidebarOpen]);
-
   const mode = (settings?.viewMode ?? "split") as ViewMode;
   const setMode = useCallback((m: ViewMode) => update({ viewMode: m }), [update]);
 
-  // Cmd/Ctrl+1/2/3 switch view mode.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
-      const m = MODES.find((x) => x.key === e.key);
-      if (!m) return;
-      e.preventDefault();
-      setMode(m.id);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [setMode]);
+  // The native menu bar owns the keyboard shortcuts (File, Edit, View). A menu
+  // item does what the matching toolbar control does, and the app's state is
+  // sent back so check marks and enabled items stay right.
+  const resync = useRef<() => void>(() => {});
+  const perform = (a: MenuActionType) => {
+    switch (a.type) {
+      case "new":
+        return void docs.newDocument();
+      case "open":
+        return void docs.open();
+      case "openRecent":
+        return void docs.openPath(a.path);
+      case "clearRecent":
+        return void ClearRecent().then(() => resync.current());
+      case "openFolder":
+        return void workspace.open(dirOf(docs.path));
+      case "closeFolder":
+        return void workspace.close();
+      case "save":
+        return void docs.save();
+      case "saveAs":
+        return void docs.saveAs();
+      case "quit":
+        return void docs.quit();
+      case "export":
+        return void exporter.run(a.format);
+      case "undo":
+        return editor.current?.undo();
+      case "redo":
+        return editor.current?.redo();
+    }
+    if (!settings) return;
+    switch (a.type) {
+      case "autosave":
+        return update({ autosave: a.mode, autosaveDelaySec: a.delaySec });
+      case "toggleRemoteImages":
+        return update({ exportRemoteImages: !settings.exportRemoteImages });
+      case "viewMode":
+        return update({ viewMode: a.mode });
+      case "toggleSidebar":
+        return update({ sidebarOpen: !settings.sidebarOpen });
+      case "layout":
+        return update({ layout: a.engine });
+      case "theme":
+        return update({ themeId: a.id });
+    }
+  };
+
+  const menuState = useMemo<MenuState | null>(
+    () =>
+      settings
+        ? {
+            viewMode: settings.viewMode,
+            sidebarOpen: settings.sidebarOpen,
+            hasFolder: workspace.tree !== null,
+            autosave: settings.autosave,
+            autosaveDelaySec: settings.autosaveDelaySec,
+            layout: settings.layout,
+            themeId: settings.themeId,
+            fetchRemoteImages: settings.exportRemoteImages,
+            canUndo: history.canUndo,
+            canRedo: history.canRedo,
+            exporting: exporter.busy,
+            path: docs.path ?? "",
+          }
+        : null,
+    [settings, workspace.tree, history, exporter.busy, docs.path],
+  );
+  resync.current = useMenu(menuState, perform).resync;
 
   const { openPath } = docs;
   const reveal = useCallback(
@@ -130,26 +174,15 @@ export default function App() {
         dirty={docs.dirty}
         files={
           <FileControls
-            onNew={docs.newDocument}
             onOpen={docs.open}
             onSave={docs.save}
-            onSaveAs={docs.saveAs}
-            onOpenRecent={(f) => docs.openPath(f.path)}
-            onOpenFolder={() => workspace.open(dirOf(docs.path))}
             extra={
-              <>
-                <AutosaveMenu
-                  mode={settings.autosave}
-                  delaySec={settings.autosaveDelaySec}
-                  onChange={(c) => update({ autosave: c.mode, autosaveDelaySec: c.delaySec })}
-                />
-                <ExportMenu
-                  busy={exporter.busy}
-                  fetchRemote={settings.exportRemoteImages}
-                  onExport={exporter.run}
-                  onToggleRemote={(exportRemoteImages) => update({ exportRemoteImages })}
-                />
-              </>
+              <ExportMenu
+                busy={exporter.busy}
+                fetchRemote={settings.exportRemoteImages}
+                onExport={exporter.run}
+                onToggleRemote={(exportRemoteImages) => update({ exportRemoteImages })}
+              />
             }
           />
         }
@@ -207,6 +240,7 @@ export default function App() {
                 diagnostics={view.diagnostics}
                 diagnosticsSource={view.diagnosticsSource}
                 language={language}
+                onHistoryChange={setHistory}
               />
             </div>
             <Diagnostics diagnostics={view.diagnostics} onSelect={reveal} />

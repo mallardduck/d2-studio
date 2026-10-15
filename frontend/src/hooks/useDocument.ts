@@ -331,19 +331,21 @@ export function useDocument({ content, setContent, confirm, initialContent, auto
     });
   }, [flash, reload]);
 
-  // Closing the window or quitting: the shell cancels it and asks us.
+  // Closing the window or quitting: the shell cancels it and asks us, and the
+  // menu's Exit item asks the same way.
   const closing = useRef(false);
-  useEffect(() => {
-    return Events.On("app:close-requested", async () => {
-      if (closing.current) return;
-      closing.current = true;
-      try {
-        if (await guard()) await ConfirmQuit();
-      } finally {
-        closing.current = false;
-      }
-    });
+  const requestQuit = useCallback(async () => {
+    if (closing.current) return;
+    closing.current = true;
+    try {
+      if (await guard()) await ConfirmQuit();
+    } finally {
+      closing.current = false;
+    }
   }, [guard]);
+  useEffect(() => {
+    return Events.On("app:close-requested", () => void requestQuit());
+  }, [requestQuit]);
 
   // Autosave after a pause in typing. The timer restarts on every edit, so it
   // never fires mid-sentence.
@@ -384,6 +386,8 @@ export function useDocument({ content, setContent, confirm, initialContent, auto
     notice,
     encoding: encodingLabel(doc),
     dismissBanner: () => setBanner(null),
+    /** Quit, after asking about unsaved changes if needed. */
+    quit: requestQuit,
     /** Show a transient message in the status bar. */
     notify: flash,
     /** Show a non-blocking error banner. */

@@ -7,6 +7,7 @@ import (
 	"d2studio/compiler"
 	"d2studio/export"
 	"d2studio/files"
+	"d2studio/menu"
 	"d2studio/settings"
 	"d2studio/workspace"
 
@@ -23,6 +24,7 @@ func init() {
 	// Registering the event types gives the frontend typed event payloads.
 	application.RegisterEvent[files.Event](files.EventFileChanged)
 	application.RegisterEvent[workspace.Update](workspace.EventChanged)
+	application.RegisterEvent[menu.Action](EventMenuAction)
 	application.RegisterEvent[application.Void](EventCloseRequested)
 }
 
@@ -73,6 +75,12 @@ func main() {
 	app.RegisterService(application.NewService(fileService))
 	workspaceService := workspace.NewService(&wailsPlatform{app: app}, workspace.DefaultLimits, workspace.DefaultPollInterval)
 	app.RegisterService(application.NewService(workspaceService))
+	recentFiles = fileService.Recent
+	menuService := NewMenuService(app)
+	app.RegisterService(application.NewService(menuService))
+	// Start with our own menu bar rather than Wails' default; the frontend
+	// sends its real state as soon as it loads.
+	menuService.ApplyInitial(menu.State{ViewMode: "split", SidebarOpen: true, Autosave: "off", AutosaveDelaySec: 2})
 	app.RegisterService(application.NewService(export.NewService(compilerCore, &wailsPlatform{app: app})))
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
