@@ -180,3 +180,26 @@ func TestAutosaveNormalization(t *testing.T) {
 		})
 	}
 }
+
+// Logging options are kept exactly as written, so the logging package can tell
+// the user about a typo instead of it being silently replaced here.
+func TestLoggingSettingsRoundTripUnchanged(t *testing.T) {
+	st, _ := newStore(t)
+	in := Defaults()
+	in.LogLevel, in.LogFormat, in.LogFileFormat = "trace", "json", "text"
+	if err := st.Save(in); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Load()
+	if err != nil || got.LogLevel != "trace" || got.LogFormat != "json" || got.LogFileFormat != "text" {
+		t.Fatalf("got %+v err=%v", got, err)
+	}
+	in.LogLevel = "chatty"
+	_ = st.Save(in)
+	if got, _ := st.Load(); got.LogLevel != "chatty" {
+		t.Fatalf("an unknown level must be preserved for the logger to report, got %q", got.LogLevel)
+	}
+	if Defaults().LogLevel != "" {
+		t.Fatal("logging is at the default level unless the user asks otherwise")
+	}
+}

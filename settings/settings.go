@@ -47,6 +47,13 @@ type Settings struct {
 	Autosave string `json:"autosave"`
 	// AutosaveDelaySec is the idle time before an AutosaveDelay save.
 	AutosaveDelaySec int `json:"autosaveDelaySec"`
+	// LogLevel is "trace", "debug", "info", "warn" or "error"; empty means
+	// info. The D2STUDIO_LOG environment variable overrides it.
+	LogLevel string `json:"logLevel"`
+	// LogFormat is the console log format, "text" (default) or "json".
+	LogFormat string `json:"logFormat"`
+	// LogFileFormat is the log file format, "json" (default) or "text".
+	LogFileFormat string `json:"logFileFormat"`
 	// ExportRemoteImages lets PNG and PDF export download remote images such
 	// as icons. Off by default so exporting works offline.
 	ExportRemoteImages bool `json:"exportRemoteImages"`
