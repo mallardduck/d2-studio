@@ -2,10 +2,12 @@ package main
 
 import (
 	"errors"
-	"log"
 
+	"d2studio/logging"
 	"d2studio/settings"
 )
+
+var settingsLog = logging.For("settings")
 
 // SettingsService exposes persisted user preferences to the frontend.
 type SettingsService struct {
@@ -18,7 +20,7 @@ type SettingsService struct {
 func NewSettingsService() *SettingsService {
 	path, err := settings.DefaultPath()
 	if err != nil {
-		log.Printf("settings: %v; preferences will not be saved", err)
+		settingsLog.Warn("cannot locate the settings folder; preferences will not be saved", "err", err)
 		return &SettingsService{}
 	}
 	return &SettingsService{store: settings.NewStore(path)}
@@ -32,7 +34,7 @@ func (s *SettingsService) Get() settings.Settings {
 	}
 	got, err := s.store.Load()
 	if err != nil {
-		log.Printf("settings: %v", err)
+		settingsLog.Warn("could not read settings; using defaults", "err", err)
 	}
 	return got
 }

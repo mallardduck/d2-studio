@@ -9,6 +9,7 @@ import (
 
 	"d2studio/compiler"
 	"d2studio/files"
+	"d2studio/logging"
 	"d2studio/menu"
 )
 
@@ -16,6 +17,8 @@ import (
 // menu.Action; the frontend performs the same action as for the equivalent
 // toolbar button.
 const EventMenuAction = "menu:action"
+
+var menuLog = logging.For("menu")
 
 // platformRoles maps the model's role names to Wails' standard items.
 var platformRoles = map[string]application.Role{
@@ -108,8 +111,11 @@ func (s *MenuService) apply(state menu.State, running bool) {
 	s.last = string(key)
 
 	native := buildNativeMenu(menu.Build(state, in), func(id string) {
+		menuLog.Trace("menu item chosen", "id", id)
 		s.app.Event.Emit(EventMenuAction, menu.Action{ID: id})
 	})
+	menuLog.Debug("menu rebuilt", "running", running, "view_mode", state.ViewMode, "autosave", state.Autosave,
+		"recent_files", len(in.Recent), "can_undo", state.CanUndo, "can_redo", state.CanRedo)
 	if !running {
 		s.app.Menu.Set(native)
 		return

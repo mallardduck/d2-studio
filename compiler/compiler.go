@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"d2studio/logging"
+
 	"github.com/d2lang/d2/d2compiler"
 	"github.com/d2lang/d2/d2lib"
 	"github.com/d2lang/d2/d2plugin"
@@ -22,6 +24,8 @@ import (
 	"github.com/d2lang/d2/lib/textmeasure"
 	"github.com/d2lang/util-go/go2"
 )
+
+var logger = logging.For("compiler")
 
 // Service compiles D2 source to SVG. It is safe for concurrent use. Requests
 // are numbered; starting a new compilation cancels the one in flight, and a
@@ -55,6 +59,9 @@ func New(fsys fs.FS) (*Service, error) {
 // service itself; D2 compilation errors are reported in Result.Diagnostics.
 func (s *Service) Compile(ctx context.Context, req Request) (*Result, error) {
 	seq := s.seq.Add(1)
+	// Only sizes and settings are logged, never the source text.
+	logger.Trace("compile requested", "seq", seq, "path", req.Path, "source_bytes", len(req.Source),
+		"layout", req.Options.Layout, "theme_set", req.Options.ThemeID != nil, "workspace", req.Workspace)
 
 	ctx = quietContext(ctx)
 	ctx, cancel := context.WithCancel(ctx)
@@ -75,6 +82,7 @@ func (s *Service) Compile(ctx context.Context, req Request) (*Result, error) {
 
 	// Superseded while waiting for the previous compilation to finish.
 	if s.superseded(seq) {
+		logger.Trace("compile skipped: superseded before it started", "seq", seq)
 		return stale(seq), nil
 	}
 
@@ -83,8 +91,12 @@ func (s *Service) Compile(ctx context.Context, req Request) (*Result, error) {
 	res.Meta.DurationMs = time.Since(start).Milliseconds()
 
 	if s.superseded(seq) || res.Status == StatusStale {
+		logger.Trace("compile result discarded: superseded", "seq", seq, "took_ms", res.Meta.DurationMs)
 		return stale(seq), nil
 	}
+	logger.Debug("compiled", "seq", seq, "status", res.Status, "layout", res.Meta.Layout,
+		"theme_id", res.Meta.ThemeID, "took_ms", res.Meta.DurationMs, "svg_bytes", len(res.SVG),
+		"diagnostics", len(res.Diagnostics), "path", req.Path)
 	return res, nil
 }
 
@@ -279,6 +291,7 @@ func (s *Service) CompileForExport(ctx context.Context, req Request) (in *Export
 		return nil, diags, nil
 	}
 	defer cleanup()
+	logger.Debug("compiled for export", "path", req.Path, "source_bytes", len(req.Source))
 	in = &ExportInput{Diagram: c.diagram, Render: *ropts, ImportRoot: ImportRoot(req.Path, req.Workspace)}
 	if req.Path != "" {
 		if abs, aerr := filepath.Abs(req.Path); aerr == nil {

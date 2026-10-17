@@ -164,6 +164,7 @@ func (in *inliner) local(u *url.URL) (*url.URL, error) {
 	if mime == "" {
 		return nil, fmt.Errorf("%q does not look like an image", name)
 	}
+	logger.Trace("inlined local image", "image", name, "bytes", len(data), "mime", mime)
 	out, err := url.Parse("data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data))
 	if err != nil {
 		return nil, err

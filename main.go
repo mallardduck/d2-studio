@@ -2,11 +2,13 @@ package main
 
 import (
 	"embed"
-	"log"
+	"os"
+	"path/filepath"
 
 	"d2studio/compiler"
 	"d2studio/export"
 	"d2studio/files"
+	"d2studio/logging"
 	"d2studio/menu"
 	"d2studio/settings"
 	"d2studio/workspace"
@@ -28,10 +30,34 @@ func init() {
 	application.RegisterEvent[application.Void](EventCloseRequested)
 }
 
+var mainLog = logging.For("main")
+
+// fatal logs err and exits. (log.Fatal would bypass the structured log.)
+func fatal(msg string, err error) {
+	mainLog.Error(msg, "err", err)
+	os.Exit(1)
+}
+
+// startLogging reads the logging options from settings.json (the environment
+// can override them) before anything else runs, so startup is captured too.
+func startLogging() (closeFn func()) {
+	var opts logging.Options
+	if path, err := settings.DefaultPath(); err == nil {
+		opts.ConfigDir = filepath.Dir(path)
+		// A missing or unreadable file just means the defaults.
+		s, _ := settings.NewStore(path).Load()
+		opts.Level, opts.Format, opts.FileFormat = s.LogLevel, s.LogFormat, s.LogFileFormat
+	}
+	closeFn, _ = logging.Init(opts)
+	return closeFn
+}
+
 func main() {
+	defer startLogging()()
+
 	compilerCore, err := compiler.New(nil)
 	if err != nil {
-		log.Fatal(err)
+		fatal("cannot start the compiler", err)
 	}
 	compilerService := NewCompilerService(compilerCore)
 
@@ -59,7 +85,7 @@ func main() {
 	})
 
 	appService.emit = func() {
-		log.Printf("quit requested: asking the frontend whether it is safe")
+		mainLog.Debug("quit requested: asking the frontend whether it is safe")
 		app.Event.Emit(EventCloseRequested)
 	}
 	appService.quit = app.Quit
@@ -67,7 +93,7 @@ func main() {
 
 	var recent *settings.RecentStore
 	if p, err := settings.RecentPath(); err != nil {
-		log.Printf("recent files will not be remembered: %v", err)
+		mainLog.Warn("recent files will not be remembered", "err", err)
 	} else {
 		recent = settings.NewRecentStore(p)
 	}
@@ -103,6 +129,6 @@ func main() {
 	fileService.Shutdown()
 	workspaceService.Close()
 	if err != nil {
-		log.Fatal(err)
+		fatal("the application stopped with an error", err)
 	}
 }

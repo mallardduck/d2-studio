@@ -62,6 +62,9 @@ type Watcher struct {
 
 // NewWatcher creates a Watcher that calls onEvent from its own goroutine.
 func NewWatcher(interval time.Duration, onEvent func(Event)) *Watcher {
+	if interval <= 0 {
+		interval = DefaultPollInterval // a ticker with no interval panics
+	}
 	return &Watcher{interval: interval, onEvent: onEvent}
 }
 
@@ -113,9 +116,15 @@ func (w *Watcher) Stop() {
 // poll checks the file once and emits at most one event.
 func (w *Watcher) poll() {
 	w.mu.Lock()
+	path := w.path
 	ev := w.check()
 	w.mu.Unlock()
-	if ev != nil && w.onEvent != nil {
+	if ev == nil {
+		logger.Trace("poll: no change", "path", path)
+		return
+	}
+	logger.Debug("external change", "path", ev.Path, "kind", ev.Kind, "message", ev.Message)
+	if w.onEvent != nil {
 		w.onEvent(*ev)
 	}
 }

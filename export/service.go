@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"d2studio/compiler"
 	"d2studio/files"
+	"d2studio/logging"
 )
+
+var logger = logging.For("export")
 
 // Platform is what the Service needs from the desktop shell.
 type Platform interface {
@@ -73,31 +77,43 @@ func (s *Service) Export(ctx context.Context, req Request) (*Result, error) {
 		return nil, fmt.Errorf("unknown export format %q", req.Format)
 	}
 
+	start := time.Now()
+	logger.Debug("export requested", "format", req.Format, "allow_remote_images", req.AllowRemoteImages,
+		"path", req.Compile.Path)
 	in, diags, err := s.comp.CompileForExport(ctx, req.Compile)
 	if err != nil {
+		logger.Debug("export failed: compile", "err", err)
 		return nil, err
 	}
 	if in == nil {
+		logger.Debug("export not started: the diagram has errors", "diagnostics", len(diags))
 		return &Result{Diagnostics: diags}, nil
 	}
 
 	out, err := Render(ctx, req.Format, in, Options{AllowRemoteImages: req.AllowRemoteImages})
 	if err != nil {
+		logger.Debug("export failed: render", "format", req.Format, "err", err)
 		return nil, err
 	}
+	logger.Trace("rendered", "format", req.Format, "bytes", len(out.Data), "took_ms", time.Since(start).Milliseconds())
 
 	path, err := s.plat.PickExportFile(req.Dir, ExportName(req.SuggestedName, req.Format), req.Format)
 	if err != nil {
 		return nil, err
 	}
 	if path == "" {
+		logger.Debug("export cancelled at the save dialog", "format", req.Format)
 		return &Result{Cancelled: true}, nil
 	}
 	path = withExtension(path, req.Format)
 
 	if err := files.WriteBytes(path, out.Data); err != nil {
+		logger.Debug("export failed: write", "path", path, "err", err)
 		return nil, fmt.Errorf("could not write %s: %w", filepath.Base(path), err)
 	}
+	logger.Debug("exported", "format", req.Format, "path", path, "bytes", len(out.Data),
+		"remote_images", out.RemoteImages, "remote_blocked", out.RemoteImagesBlocked,
+		"took_ms", time.Since(start).Milliseconds())
 	return &Result{
 		Path:                path,
 		Bytes:               len(out.Data),

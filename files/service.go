@@ -1,14 +1,16 @@
 package files
 
 import (
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"d2studio/logging"
 	"d2studio/settings"
 )
+
+var logger = logging.For("files")
 
 // EventFileChanged is emitted when the open file changes on disk. Its data
 // is an Event.
@@ -75,8 +77,11 @@ func (s *Service) OpenPath(path string) (*OpenResult, error) {
 	}
 	doc, err := Open(abs)
 	if err != nil {
+		logger.Debug("open failed", "path", abs, "err", err)
 		return nil, err
 	}
+	logger.Debug("opened", "path", abs, "bytes", doc.Version.Size, "line_ending", doc.LineEnding,
+		"bom", doc.BOM, "mixed_line_endings", doc.MixedLineEndings)
 	s.remember(abs)
 	s.watcher.Watch(abs, doc.Version)
 	return &OpenResult{Document: doc}, nil
@@ -87,10 +92,14 @@ func (s *Service) OpenPath(path string) (*OpenResult, error) {
 func (s *Service) Save(path, content string, opts SaveOptions) (*SaveResult, error) {
 	res, err := Save(path, content, opts)
 	if err != nil {
+		logger.Debug("save failed", "path", path, "err", err)
 		return nil, err
 	}
 	if res.Saved {
+		logger.Debug("saved", "path", path, "bytes", res.Version.Size, "forced", opts.Force)
 		s.watcher.Rebase(res.Version) // our own write is not an external change
+	} else {
+		logger.Debug("save refused: file changed on disk", "path", path, "conflict", res.Conflict)
 	}
 	return res, nil
 }
@@ -128,6 +137,7 @@ func (s *Service) SaveAs(dir, suggestedName, content string, opts SaveOptions) (
 	if err != nil {
 		return nil, err
 	}
+	logger.Debug("saved as", "path", abs, "bytes", res.Version.Size)
 	s.remember(abs)
 	s.watcher.Watch(abs, res.Version)
 	return &SaveAsResult{Path: abs, Name: filepath.Base(abs), Version: res.Version}, nil
@@ -160,7 +170,7 @@ func (s *Service) Recent() []RecentFile {
 	}
 	paths, err := s.recent.List()
 	if err != nil {
-		log.Printf("files: %v", err)
+		logger.Warn("could not read the recent files list", "err", err)
 	}
 	for _, p := range paths {
 		_, statErr := os.Stat(p)
@@ -197,7 +207,7 @@ func (s *Service) remember(path string) {
 		return
 	}
 	if err := s.recent.Add(path); err != nil {
-		log.Printf("files: remember recent file: %v", err)
+		logger.Warn("could not remember a recent file", "path", path, "err", err)
 	}
 }
 

@@ -45,7 +45,8 @@ export function Sidebar({ tree, error, activePath, onOpenFolder, onCloseFolder, 
           </div>
           {tree.truncated && (
             <p className="border-t border-line px-2 py-1.5 text-fg-muted">
-              Showing the first {tree.fileCount} files. Open a smaller folder to see the rest.
+              This folder is very large or deeply nested, so some of it was not scanned and some files may be missing.
+              Open a smaller folder to see everything.
             </p>
           )}
         </>

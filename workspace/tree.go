@@ -16,12 +16,17 @@ import (
 
 // Limits bound a scan so a huge folder cannot hang or flood the UI.
 type Limits struct {
-	MaxDepth   int
+	MaxDepth int
+	// MaxEntries caps the .d2 files and folders listed.
 	MaxEntries int
+	// MaxVisited caps every directory entry examined, listed or not. Without
+	// it a huge folder of unrelated files would be walked in full, and again
+	// on every poll. Zero or negative means no limit.
+	MaxVisited int
 }
 
 // DefaultLimits suit a "lightweight" project tree.
-var DefaultLimits = Limits{MaxDepth: 8, MaxEntries: 2000}
+var DefaultLimits = Limits{MaxDepth: 8, MaxEntries: 2000, MaxVisited: 20_000}
 
 // Node is a directory or a .d2 file.
 type Node struct {
@@ -40,7 +45,8 @@ type Tree struct {
 	Nodes []*Node `json:"nodes"`
 	// FileCount is the number of .d2 files found.
 	FileCount int `json:"fileCount"`
-	// Truncated is true when a limit stopped the scan early.
+	// Truncated is true when a limit stopped the scan early, so the tree may
+	// be missing files (a folder that is too large or too deeply nested).
 	Truncated bool `json:"truncated"`
 	// Signature changes whenever a listed file is added, removed or modified.
 	Signature string `json:"signature"`
@@ -58,6 +64,7 @@ func isD2File(name string) bool {
 type scanner struct {
 	limits    Limits
 	entries   int
+	visited   int
 	fileCount int
 	truncated bool
 	sig       []string
@@ -109,6 +116,11 @@ func (sc *scanner) dir(path string, depth int) ([]*Node, error) {
 	nodes := []*Node{}
 	for _, e := range entries {
 		if sc.entries >= sc.limits.MaxEntries {
+			sc.truncated = true
+			break
+		}
+		sc.visited++
+		if sc.limits.MaxVisited > 0 && sc.visited > sc.limits.MaxVisited {
 			sc.truncated = true
 			break
 		}

@@ -3,7 +3,11 @@ package workspace
 import (
 	"sync"
 	"time"
+
+	"d2studio/logging"
 )
+
+var logger = logging.For("workspace")
 
 // EventChanged is emitted when the workspace's .d2 files change on disk, or
 // when the folder becomes unreadable or readable again. Its data is an Update.
@@ -53,6 +57,9 @@ type Service struct {
 
 // NewService creates a Service.
 func NewService(plat Platform, limits Limits, interval time.Duration) *Service {
+	if interval <= 0 {
+		interval = DefaultPollInterval // a ticker with no interval panics
+	}
 	return &Service{plat: plat, limits: limits, interval: interval}
 }
 
@@ -75,10 +82,14 @@ func (s *Service) OpenFolderDialog(dir string) (*OpenResult, error) {
 // OpenFolder scans path, makes it the workspace and starts watching it. If the
 // folder cannot be scanned, the current workspace is left as it was.
 func (s *Service) OpenFolder(path string) (*Tree, error) {
+	start := time.Now()
 	tree, err := Scan(path, s.limits)
 	if err != nil {
+		logger.Debug("open folder failed", "path", path, "err", err)
 		return nil, err
 	}
+	logger.Debug("opened folder", "root", tree.Root, "files", tree.FileCount, "truncated", tree.Truncated,
+		"took_ms", time.Since(start).Milliseconds())
 	s.Close()
 
 	s.mu.Lock()
@@ -143,7 +154,11 @@ func (s *Service) poll() {
 		return
 	}
 
+	start := time.Now()
 	tree, err := Scan(root, s.limits)
+	if err == nil {
+		logger.Trace("poll: scanned", "root", root, "files", tree.FileCount, "took_ms", time.Since(start).Milliseconds())
+	}
 
 	s.mu.Lock()
 	if s.root != root { // closed or replaced while scanning
@@ -164,6 +179,7 @@ func (s *Service) poll() {
 	s.mu.Unlock()
 
 	if update != nil {
+		logger.Debug("workspace changed", "root", root, "error", update.Error)
 		s.plat.Emit(EventChanged, *update)
 	}
 }

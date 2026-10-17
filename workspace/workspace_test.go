@@ -438,3 +438,53 @@ func (c *chanPlatform) Emit(event string, data any) {
 		c.ch <- u
 	}
 }
+
+func TestNonPositiveIntervalFallsBackToTheDefault(t *testing.T) {
+	for _, d := range []time.Duration{0, -time.Second} {
+		s := NewService(&fakePlatform{}, DefaultLimits, d)
+		if s.interval != DefaultPollInterval {
+			t.Errorf("interval %v became %v, want the default", d, s.interval)
+		}
+		if _, err := s.OpenFolder(mk(t, "a.d2")); err != nil { // starts the poller; must not panic
+			t.Fatal(err)
+		}
+		s.Close()
+	}
+}
+
+// Unrelated files are not listed, so the listing cap alone would never stop a
+// walk over a huge folder; the visited cap must.
+func TestVisitedLimitBoundsAWalkOverUnrelatedFiles(t *testing.T) {
+	dir := mk(t, "keep.d2")
+	for i := 0; i < 50; i++ {
+		if err := os.WriteFile(filepath.Join(dir, "z"+string(rune('a'+i%26))+string(rune('a'+i/26))+".txt"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tree, err := Scan(dir, Limits{MaxDepth: 8, MaxEntries: 1000, MaxVisited: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tree.Truncated {
+		t.Fatal("a walk over more entries than MaxVisited must be reported as truncated")
+	}
+	// With room to spare it is complete.
+	tree, _ = Scan(dir, Limits{MaxDepth: 8, MaxEntries: 1000, MaxVisited: 1000})
+	if tree.Truncated || tree.FileCount != 1 {
+		t.Fatalf("tree = %+v", tree)
+	}
+}
+
+func TestZeroVisitedLimitMeansUnlimited(t *testing.T) {
+	dir := mk(t, "a.d2", "b.d2", "c.d2")
+	tree, _ := Scan(dir, Limits{MaxDepth: 8, MaxEntries: 100})
+	if tree.Truncated || tree.FileCount != 3 {
+		t.Fatalf("tree = %+v", tree)
+	}
+}
+
+func TestDefaultLimitsBoundTheVisitedEntries(t *testing.T) {
+	if DefaultLimits.MaxVisited <= 0 {
+		t.Fatal("the defaults must bound the walk, or a big folder is rescanned in full every poll")
+	}
+}

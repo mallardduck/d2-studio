@@ -199,3 +199,15 @@ func TestWatchReplacesPreviousWatch(t *testing.T) {
 	case <-time.After(60 * time.Millisecond):
 	}
 }
+
+func TestNonPositiveIntervalFallsBackToTheDefault(t *testing.T) {
+	for _, d := range []time.Duration{0, -time.Second} {
+		w := NewWatcher(d, func(Event) {})
+		if w.interval != DefaultPollInterval {
+			t.Errorf("interval %v became %v, want the default", d, w.interval)
+		}
+		// Starting and stopping must not panic.
+		w.Watch(tmpFile(t, "a.d2", "x"), Version{})
+		w.Stop()
+	}
+}
