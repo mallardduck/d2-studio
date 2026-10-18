@@ -126,7 +126,7 @@ func countRemote(in *compiler.ExportInput) (int, error) {
 }
 
 func renderRaster(ctx context.Context, f Format, in *compiler.ExportInput, opts Options) (*Output, error) {
-	prep, err := assets.Prepare(in.Diagram, in.ImportRoot, in.FileDir)
+	prep, err := assets.Prepare(ctx, in.Diagram, in.ImportRoot, in.FileDir, assets.Options{})
 	if err != nil {
 		return nil, err
 	}
