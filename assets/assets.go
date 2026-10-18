@@ -1,4 +1,8 @@
-package export
+// Package assets prepares the images a diagram refers to: local files are read
+// from disk and inlined as data URIs (confined to a folder, with no gap for a
+// symlink to be swapped in), and remote images are reported, or fetched when
+// the caller allows it. Both the live preview and the exporters use it.
+package assets
 
 import (
 	"encoding/base64"
@@ -14,25 +18,24 @@ import (
 	"strings"
 
 	"github.com/d2lang/d2/d2target"
+
+	"d2studio/logging"
 )
 
-// errOffline is returned for every network request made while remote images
-// are not allowed.
-var errOffline = errors.New("remote images are disabled for this export")
+var logger = logging.For("assets")
 
-// offlineTransport refuses all requests, so no connection is ever attempted.
-type offlineTransport struct{}
+// maxLocalImageBytes is the largest local image that will be read. It matches
+// the limit D2's own image loader applies.
+const maxLocalImageBytes int64 = 32 * 1024 * 1024
 
-func (offlineTransport) RoundTrip(*http.Request) (*http.Response, error) { return nil, errOffline }
-
-// prepared is a diagram whose local images have been read and inlined.
-type prepared struct {
-	diagram *d2target.Diagram
-	// remote lists the distinct http(s) image URLs the diagram refers to.
-	remote []string
+// Prepared is a diagram whose local images have been read and inlined.
+type Prepared struct {
+	Diagram *d2target.Diagram
+	// Remote lists the distinct http(s) image URLs the diagram refers to.
+	Remote []string
 }
 
-// prepareAssets returns a copy of d in which every local image has been read
+// Prepare returns a copy of d in which every local image has been read
 // from disk and replaced by a data URI, and reports the remote images the
 // diagram uses.
 //
@@ -41,8 +44,8 @@ type prepared struct {
 // from elsewhere on disk into an export. Reading them here (and not leaving
 // it to D2's image resolver, which accepts any path) also leaves no gap in
 // which a symlink could be swapped between a check and the read.
-func prepareAssets(d *d2target.Diagram, root, fileDir string) (*prepared, error) {
-	p := &prepared{}
+func Prepare(d *d2target.Diagram, root, fileDir string) (*Prepared, error) {
+	p := &Prepared{}
 	var dir *os.Root
 	if root != "" {
 		r, err := os.OpenRoot(root)
@@ -72,8 +75,8 @@ func prepareAssets(d *d2target.Diagram, root, fileDir string) (*prepared, error)
 			return nil, err
 		}
 	}
-	p.diagram = &c
-	p.remote = slices.Sorted(func(yield func(string) bool) {
+	p.Diagram = &c
+	p.Remote = slices.Sorted(func(yield func(string) bool) {
 		for u := range in.remote {
 			if !yield(u) {
 				return
@@ -153,12 +156,12 @@ func (in *inliner) local(u *url.URL) (*url.URL, error) {
 	}
 	defer f.Close()
 
-	data, err := io.ReadAll(io.LimitReader(f, imageAssetMaxBytes+1))
+	data, err := io.ReadAll(io.LimitReader(f, maxLocalImageBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("cannot read image %q: %w", name, err)
 	}
-	if int64(len(data)) > imageAssetMaxBytes {
-		return nil, fmt.Errorf("image %q is larger than the %d MB limit", name, imageAssetMaxBytes>>20)
+	if int64(len(data)) > maxLocalImageBytes {
+		return nil, fmt.Errorf("image %q is larger than the %d MB limit", name, maxLocalImageBytes>>20)
 	}
 	mime := imageMIME(name, data)
 	if mime == "" {

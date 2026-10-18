@@ -10,6 +10,7 @@ package export
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -22,8 +23,18 @@ import (
 	"github.com/d2lang/d2/lib/imageasset"
 	"github.com/d2lang/d2/lib/pdf"
 
+	"d2studio/assets"
 	"d2studio/compiler"
 )
+
+// errOffline is returned for every network request made while remote images
+// are not allowed.
+var errOffline = errors.New("remote images are disabled for this export")
+
+// offlineTransport refuses all requests, so no connection is ever attempted.
+type offlineTransport struct{}
+
+func (offlineTransport) RoundTrip(*http.Request) (*http.Response, error) { return nil, errOffline }
 
 // Format is an export file format.
 type Format string
@@ -115,23 +126,23 @@ func countRemote(in *compiler.ExportInput) (int, error) {
 }
 
 func renderRaster(ctx context.Context, f Format, in *compiler.ExportInput, opts Options) (*Output, error) {
-	prep, err := prepareAssets(in.Diagram, in.ImportRoot, in.FileDir)
+	prep, err := assets.Prepare(in.Diagram, in.ImportRoot, in.FileDir)
 	if err != nil {
 		return nil, err
 	}
 
-	pngData, err := rasterize(ctx, prep.diagram, in.Render, opts.AllowRemoteImages)
+	pngData, err := rasterize(ctx, prep.Diagram, in.Render, opts.AllowRemoteImages)
 	if err != nil {
 		return nil, err
 	}
 
-	out := &Output{RemoteImages: len(prep.remote), RemoteImagesBlocked: len(prep.remote) > 0 && !opts.AllowRemoteImages}
+	out := &Output{RemoteImages: len(prep.Remote), RemoteImagesBlocked: len(prep.Remote) > 0 && !opts.AllowRemoteImages}
 	if f == PNG {
 		out.Data = pngData
 		return out, nil
 	}
 
-	data, err := toPDF(pngData, prep.diagram, in.Render)
+	data, err := toPDF(pngData, prep.Diagram, in.Render)
 	if err != nil {
 		return nil, err
 	}
