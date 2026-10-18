@@ -13,6 +13,10 @@ type Options struct {
 	ThemeID *int64 `json:"themeId"`
 	// Sketch renders hand-drawn style. nil defers to source/default.
 	Sketch *bool `json:"sketch"`
+	// RemoteImages lets the preview download the http(s) images a diagram
+	// refers to (such as icons). Off by default: a file can name any URL, so
+	// the user turns this on per file.
+	RemoteImages bool `json:"remoteImages"`
 }
 
 // Request is one compilation request.
@@ -31,7 +35,8 @@ type Request struct {
 type Severity string
 
 const (
-	SeverityError Severity = "error"
+	SeverityError   Severity = "error"
+	SeverityWarning Severity = "warning"
 )
 
 // Diagnostic is a compiler message. Line/Column are 1-based; From/To are
@@ -70,6 +75,11 @@ type Meta struct {
 	SourceThemeID *int64 `json:"sourceThemeId"`
 	Width         int    `json:"width"`
 	Height        int    `json:"height"`
+	// RemoteImages is how many distinct http(s) images the diagram refers to,
+	// and RemoteImagesLoaded how many of them are shown. When Options.
+	// RemoteImages is off, the difference is the number being hidden.
+	RemoteImages       int `json:"remoteImages"`
+	RemoteImagesLoaded int `json:"remoteImagesLoaded"`
 }
 
 // Status of a compilation.
@@ -89,7 +99,10 @@ type Result struct {
 	Status      Status       `json:"status"`
 	SVG         string       `json:"svg"`
 	Diagnostics []Diagnostic `json:"diagnostics"`
-	Meta        Meta         `json:"meta"`
+	// Warnings are problems that did not stop the diagram rendering, such as
+	// an image that could not be loaded. They have no source location.
+	Warnings []Diagnostic `json:"warnings"`
+	Meta     Meta         `json:"meta"`
 }
 
 // Engine describes a layout engine.

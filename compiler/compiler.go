@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"d2studio/assets"
 	"d2studio/logging"
 
 	"github.com/d2lang/d2/d2compiler"
@@ -44,6 +45,9 @@ type Service struct {
 	ruler *textmeasure.Ruler
 
 	fsys fs.FS
+
+	// remote fetches remote images for the preview when a request allows it.
+	remote assets.Fetcher
 }
 
 // New creates a Service. fsys, when non-nil, is used to resolve D2 imports.
@@ -52,8 +56,11 @@ func New(fsys fs.FS) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("initialize text measurement: %w", err)
 	}
-	return &Service{ruler: ruler, fsys: fsys}, nil
+	return &Service{ruler: ruler, fsys: fsys, remote: assets.NewHTTPFetcher(assets.HTTPOptions{})}, nil
 }
+
+// SetRemoteFetcher replaces how remote images are fetched (for tests).
+func (s *Service) SetRemoteFetcher(f assets.Fetcher) { s.remote = f }
 
 // Compile compiles req. The returned error is reserved for failures of the
 // service itself; D2 compilation errors are reported in Result.Diagnostics.
@@ -221,7 +228,36 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 	layoutSource := pickSource(req.Options.Layout != "", srcLayout != "")
 	themeSource := pickSource(req.Options.ThemeID != nil, srcTheme != nil)
 
-	svg, err := d2svg.Render(c.diagram, ropts)
+	// Inline the diagram's images: the preview is shown as an <img>, which
+	// loads no external resources, so references to files and URLs would
+	// otherwise show nothing. Failures here never fail the compile.
+	diagram := c.diagram
+	var warnings []Diagnostic
+	var remoteFound, remoteLoaded int
+	var fetcher assets.Fetcher
+	if req.Options.RemoteImages {
+		fetcher = s.remote
+	}
+	prep, perr := assets.Prepare(ctx, c.diagram, ImportRoot(req.Path, req.Workspace), fileDir(req.Path),
+		assets.Options{Lenient: true, Fetcher: fetcher})
+	if perr != nil {
+		warnings = append(warnings, Diagnostic{Severity: SeverityWarning, Message: "images could not be prepared: " + perr.Error()})
+	} else {
+		diagram = prep.Diagram
+		remoteFound, remoteLoaded = len(prep.Remote), prep.RemoteLoaded
+		for _, problem := range prep.Problems {
+			warnings = append(warnings, Diagnostic{Severity: SeverityWarning, Message: problem})
+		}
+		if remoteFound > 0 {
+			logger.Debug("images", "remote", remoteFound, "loaded", remoteLoaded, "allowed", req.Options.RemoteImages,
+				"problems", len(prep.Problems))
+		}
+	}
+	if ctx.Err() != nil {
+		return &Result{Seq: seq, Status: StatusStale}
+	}
+
+	svg, err := d2svg.Render(diagram, ropts)
 	if err != nil {
 		return &Result{Seq: seq, Status: StatusError, Diagnostics: []Diagnostic{{Severity: SeverityError, Message: "render: " + err.Error()}}}
 	}
@@ -236,6 +272,7 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 		Status:      StatusSuccess,
 		SVG:         string(svg),
 		Diagnostics: []Diagnostic{},
+		Warnings:    warnings,
 		Meta: Meta{
 			Layout:        *c.copts.Layout,
 			ThemeID:       themeID,
@@ -245,8 +282,23 @@ func (s *Service) compileLocked(ctx context.Context, seq uint64, req Request) (r
 			SourceThemeID: srcTheme,
 			Width:         br.X - tl.X,
 			Height:        br.Y - tl.Y,
+
+			RemoteImages:       remoteFound,
+			RemoteImagesLoaded: remoteLoaded,
 		},
 	}
+}
+
+// fileDir is the folder of the file at path, or "" for an unsaved document.
+func fileDir(path string) string {
+	if path == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return ""
+	}
+	return filepath.Dir(abs)
 }
 
 // ExportInput is a compiled diagram ready to be rendered to a file format.
@@ -293,11 +345,7 @@ func (s *Service) CompileForExport(ctx context.Context, req Request) (in *Export
 	defer cleanup()
 	logger.Debug("compiled for export", "path", req.Path, "source_bytes", len(req.Source))
 	in = &ExportInput{Diagram: c.diagram, Render: *ropts, ImportRoot: ImportRoot(req.Path, req.Workspace)}
-	if req.Path != "" {
-		if abs, aerr := filepath.Abs(req.Path); aerr == nil {
-			in.FileDir = filepath.Dir(abs)
-		}
-	}
+	in.FileDir = fileDir(req.Path)
 	return in, nil, nil
 }
 
