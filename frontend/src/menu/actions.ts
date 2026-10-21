@@ -18,6 +18,7 @@ export type MenuActionType =
   | { type: "redo" }
   | { type: "viewMode"; mode: "source" | "split" | "preview" }
   | { type: "toggleSidebar" }
+  | { type: "toggleFileRemoteImages" }
   | { type: "layout"; engine: string }
   | { type: "theme"; id: number | null };
 
@@ -34,6 +35,7 @@ const SIMPLE: Record<string, MenuActionType> = {
   "edit.undo": { type: "undo" },
   "edit.redo": { type: "redo" },
   "view.sidebar": { type: "toggleSidebar" },
+  "view.remoteImages": { type: "toggleFileRemoteImages" },
 };
 
 const FORMATS: Record<string, Format> = { svg: Format.SVG, png: Format.PNG, pdf: Format.PDF };

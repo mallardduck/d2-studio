@@ -102,7 +102,7 @@ func TestQuitIsInTheFileMenuOnlyOffMac(t *testing.T) {
 func TestIDsAreUniqueAndWellFormed(t *testing.T) {
 	grammar := regexp.MustCompile(`^(file\.(new|open|openFolder|closeFolder|save|saveAs|quit|recent\.clear|recent:.+)|` +
 		`autosave:(off|blur|delay:\d+)|export:(svg|png|pdf)|export\.remote|edit\.(undo|redo)|` +
-		`view\.(sidebar|mode:(source|split|preview))|layout:[a-z0-9-]*|theme:\d*)$`)
+		`view\.(sidebar|remoteImages|mode:(source|split|preview))|layout:[a-z0-9-]*|theme:\d*)$`)
 	for _, goos := range []string{"darwin", "windows", "linux"} {
 		seen := map[string]bool{}
 		for _, id := range IDs(Build(defaultState(), inputs(goos))) {
@@ -401,5 +401,22 @@ func TestIDFixtureIsCurrent(t *testing.T) {
 	}
 	if string(want) != string(got) {
 		t.Fatal("frontend/src/menu/ids.fixture.json is stale; run `go test ./menu -update`")
+	}
+}
+
+func TestRemoteImagesPreviewToggle(t *testing.T) {
+	s := defaultState()
+	item := find(t, viewOf(t, s).Children, "Show Remote Images in This File")
+	if item.Kind != Check || item.ID != "view.remoteImages" || item.Checked {
+		t.Fatalf("by default remote images are off: %+v", item)
+	}
+	s.RemoteImages = true
+	if !find(t, viewOf(t, s).Children, "Show Remote Images in This File").Checked {
+		t.Fatal("the check mark should follow the state")
+	}
+	// It is separate from the export option of a similar name.
+	export := find(t, fileMenuOf(t, s, "darwin").Children, "Export")
+	if find(t, export.Children, "Fetch Remote Images").Checked {
+		t.Fatal("the export option must not follow the preview option")
 	}
 }

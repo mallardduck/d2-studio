@@ -1,9 +1,12 @@
 package settings
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -19,7 +22,7 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != Defaults() {
+	if !reflect.DeepEqual(got, Defaults()) {
 		t.Fatalf("got %+v, want defaults", got)
 	}
 	if got.ViewMode != ViewSplit {
@@ -56,7 +59,7 @@ func TestCorruptFileFallsBackToDefaultsWithError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a corrupt file")
 	}
-	if got != Defaults() {
+	if !reflect.DeepEqual(got, Defaults()) {
 		t.Fatalf("got %+v, want defaults", got)
 	}
 	// The user's file must not be destroyed by a failed load.
@@ -201,5 +204,40 @@ func TestLoggingSettingsRoundTripUnchanged(t *testing.T) {
 	}
 	if Defaults().LogLevel != "" {
 		t.Fatal("logging is at the default level unless the user asks otherwise")
+	}
+}
+
+func TestRemoteImageFilesAreEmptyByDefaultAndCleaned(t *testing.T) {
+	if got := Defaults().Normalize().RemoteImageFiles; len(got) != 0 {
+		t.Fatalf("nothing is trusted by default: %v", got)
+	}
+	in := Defaults()
+	in.RemoteImageFiles = []string{"/a.d2", "", "/b.d2", "/a.d2", "/c.d2"}
+	got := in.Normalize().RemoteImageFiles
+	if strings.Join(got, ",") != "/b.d2,/a.d2,/c.d2" {
+		t.Fatalf("duplicates and blanks should go, keeping the latest occurrence: %v", got)
+	}
+
+	many := make([]string, 0, MaxRemoteImageFiles+20)
+	for i := 0; i < MaxRemoteImageFiles+20; i++ {
+		many = append(many, fmt.Sprintf("/f%d.d2", i))
+	}
+	in.RemoteImageFiles = many
+	got = in.Normalize().RemoteImageFiles
+	if len(got) != MaxRemoteImageFiles || got[0] != "/f20.d2" || got[len(got)-1] != fmt.Sprintf("/f%d.d2", MaxRemoteImageFiles+19) {
+		t.Fatalf("only the newest %d should be kept, oldest first: len=%d first=%s last=%s", MaxRemoteImageFiles, len(got), got[0], got[len(got)-1])
+	}
+}
+
+func TestRemoteImageFilesRoundTrip(t *testing.T) {
+	st, _ := newStore(t)
+	in := Defaults()
+	in.RemoteImageFiles = []string{"/work/a.d2", "/work/b.d2"}
+	if err := st.Save(in); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := st.Load()
+	if strings.Join(got.RemoteImageFiles, ",") != "/work/a.d2,/work/b.d2" {
+		t.Fatalf("got %v", got.RemoteImageFiles)
 	}
 }

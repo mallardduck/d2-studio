@@ -25,6 +25,7 @@
   "view.mode:split",
   "view.mode:preview",
   "view.sidebar",
+  "view.remoteImages",
   "layout:",
   "layout:dagre",
   "layout:elk",

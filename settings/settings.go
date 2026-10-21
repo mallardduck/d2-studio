@@ -16,6 +16,10 @@ const (
 	ViewSplit   = "split"
 	ViewPreview = "preview"
 
+	// MaxRemoteImageFiles is how many files can be remembered as trusted to
+	// load remote images in the preview.
+	MaxRemoteImageFiles = 100
+
 	MinSplitRatio = 0.15
 	MaxSplitRatio = 0.85
 
@@ -47,6 +51,10 @@ type Settings struct {
 	Autosave string `json:"autosave"`
 	// AutosaveDelaySec is the idle time before an AutosaveDelay save.
 	AutosaveDelaySec int `json:"autosaveDelaySec"`
+	// RemoteImageFiles lists the files the user has allowed to load remote
+	// images (icons and the like) in the preview, oldest first. Other files
+	// never make a network request just by being opened.
+	RemoteImageFiles []string `json:"remoteImageFiles"`
 	// LogLevel is "trace", "debug", "info", "warn" or "error"; empty means
 	// info. The D2STUDIO_LOG environment variable overrides it.
 	LogLevel string `json:"logLevel"`
@@ -73,6 +81,7 @@ func (s Settings) Normalize() Settings {
 	default:
 		s.ViewMode = d.ViewMode
 	}
+	s.RemoteImageFiles = cleanTrusted(s.RemoteImageFiles)
 	switch s.Autosave {
 	case AutosaveOff, AutosaveDelay, AutosaveBlur:
 	default:
@@ -171,4 +180,26 @@ func writeFileAtomic(path string, data []byte) error {
 		return fmt.Errorf("write settings: %w", err)
 	}
 	return nil
+}
+
+// cleanTrusted drops empty and duplicate entries (keeping the latest
+// occurrence, so order still means "most recently trusted last") and keeps
+// only the newest MaxRemoteImageFiles.
+func cleanTrusted(in []string) []string {
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for i := len(in) - 1; i >= 0; i-- {
+		if p := in[i]; p != "" && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	// out is newest-first; trim, then restore oldest-first.
+	if len(out) > MaxRemoteImageFiles {
+		out = out[:MaxRemoteImageFiles]
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
 }

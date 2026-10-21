@@ -3,12 +3,14 @@ import { baseName } from "../files/model";
 
 interface Props {
   diagnostics: Diagnostic[];
+  /** Problems that did not stop the diagram rendering. Shown after the errors. */
+  warnings?: Diagnostic[];
   onSelect: (d: Diagnostic) => void;
 }
 
 /** Non-blocking error list. Selecting an entry moves the editor cursor to it. */
-export function Diagnostics({ diagnostics, onSelect }: Props) {
-  if (diagnostics.length === 0) return null;
+export function Diagnostics({ diagnostics, warnings = [], onSelect }: Props) {
+  if (diagnostics.length === 0 && warnings.length === 0) return null;
   return (
     <ul
       aria-label="Compiler diagnostics"
@@ -31,6 +33,12 @@ export function Diagnostics({ diagnostics, onSelect }: Props) {
             )}
             <span className="min-w-0 break-words">{d.message}</span>
           </button>
+        </li>
+      ))}
+      {warnings.map((w, i) => (
+        <li key={`w${i}`} className="flex items-baseline gap-2 px-3 py-1">
+          <span className="font-medium text-warn">Warning</span>
+          <span className="min-w-0 break-words">{w.message}</span>
         </li>
       ))}
     </ul>

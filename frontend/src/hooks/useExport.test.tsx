@@ -24,7 +24,7 @@ function setup(overrides: object = {}) {
     useExport({
       compile: {
         source: "a -> b",
-        options: { layout: "elk", themeId: null, sketch: null },
+        options: { layout: "elk", themeId: null, sketch: null, remoteImages: false },
         path: "/w/a.d2",
         workspace: "/w",
       },
@@ -50,7 +50,7 @@ describe("useExport", () => {
       format: "png",
       compile: {
         source: "a -> b",
-        options: { layout: "elk", themeId: null, sketch: null },
+        options: { layout: "elk", themeId: null, sketch: null, remoteImages: false },
         path: "/w/a.d2",
         workspace: "/w",
       },

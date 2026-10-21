@@ -19,12 +19,14 @@ import { useConfirm } from "./hooks/useConfirm";
 import { useDocument } from "./hooks/useDocument";
 import { useWorkspace } from "./hooks/useWorkspace";
 import { useExport } from "./hooks/useExport";
+import { useRemoteImages } from "./hooks/useRemoteImages";
 import { useMenu } from "./hooks/useMenu";
 import type { MenuActionType } from "./menu/actions";
 import type { State as MenuState } from "../bindings/d2studio/menu/models";
 import { ClearRecent } from "../bindings/d2studio/files/service";
 import type { HistoryStatus } from "./editor/history";
 import { dirOf } from "./files/model";
+import { remoteImagesNote } from "./files/remote";
 import { clampRatio, useSettings, type ViewMode } from "./hooks/useSettings";
 import { d2Language } from "./editor/d2lang";
 import { SAMPLE } from "./sample";
@@ -40,11 +42,6 @@ export default function App() {
   const [history, setHistory] = useState<HistoryStatus>({ canUndo: false, canRedo: false });
   const { settings, update, saveError } = useSettings();
 
-  // Empty layout / null theme mean "follow the D2 source, else D2's default".
-  const options = useMemo<Options>(
-    () => ({ layout: settings?.layout ?? "", themeId: settings?.themeId ?? null, sketch: null }),
-    [settings?.layout, settings?.themeId],
-  );
   const { spec: dialog, confirm, choose } = useConfirm();
   const setContent = useCallback((text: string) => {
     editor.current?.setDoc(text);
@@ -58,6 +55,20 @@ export default function App() {
     autosave: settings ? { mode: settings.autosave, delaySec: settings.autosaveDelaySec } : undefined,
   });
   const workspace = useWorkspace(settings, update);
+
+  const remote = useRemoteImages(settings, docs.path, update);
+  const remoteOn = remote.on;
+
+  // Empty layout / null theme mean "follow the D2 source, else D2's default".
+  const options = useMemo<Options>(
+    () => ({
+      layout: settings?.layout ?? "",
+      themeId: settings?.themeId ?? null,
+      sketch: null,
+      remoteImages: remoteOn,
+    }),
+    [settings?.layout, settings?.themeId, remoteOn],
+  );
   const view = useCompiler(source, options, docs.path ?? "", workspace.root, workspace.revision);
   const exporter = useExport({
     compile: { source, options, path: docs.path ?? "", workspace: workspace.root },
@@ -141,12 +152,13 @@ export default function App() {
             themeId: settings.themeId,
             fetchRemoteImages: settings.exportRemoteImages,
             canUndo: history.canUndo,
+            remoteImages: remoteOn,
             canRedo: history.canRedo,
             exporting: exporter.busy,
             path: docs.path ?? "",
           }
         : null,
-    [settings, workspace.tree, history, exporter.busy, docs.path],
+    [settings, workspace.tree, history, exporter.busy, docs.path, remoteOn],
   );
   resync.current = useMenu(menuState, perform).resync;
 
@@ -243,7 +255,7 @@ export default function App() {
                 onHistoryChange={setHistory}
               />
             </div>
-            <Diagnostics diagnostics={view.diagnostics} onSelect={reveal} />
+            <Diagnostics diagnostics={view.diagnostics} warnings={view.warnings} onSelect={reveal} />
           </section>
 
           {mode === "split" && (
@@ -269,6 +281,8 @@ export default function App() {
         themes={themes}
         zoom={mode === "source" ? null : zoom}
         errorCount={view.diagnostics.length}
+        remoteNote={remoteImagesNote(view.meta, remoteOn)}
+        onShowRemote={remote.toggle}
         encoding={docs.encoding}
         notice={docs.notice || (saveError ? `Settings not saved: ${saveError}` : "")}
       />

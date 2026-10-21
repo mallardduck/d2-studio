@@ -26,6 +26,7 @@ const state = (o: Partial<State> = {}): State => ({
   layout: "",
   themeId: null,
   fetchRemoteImages: false,
+  remoteImages: false,
   canUndo: false,
   canRedo: false,
   exporting: false,

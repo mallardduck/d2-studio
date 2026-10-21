@@ -68,8 +68,11 @@ type State struct {
 	Layout            string `json:"layout"`
 	ThemeID           *int64 `json:"themeId"`
 	FetchRemoteImages bool   `json:"fetchRemoteImages"`
-	CanUndo           bool   `json:"canUndo"`
-	CanRedo           bool   `json:"canRedo"`
+	// RemoteImages is whether the preview may load remote images for the
+	// open file.
+	RemoteImages bool `json:"remoteImages"`
+	CanUndo      bool `json:"canUndo"`
+	CanRedo      bool `json:"canRedo"`
 	// Exporting disables the export items while one is running.
 	Exporting bool `json:"exporting"`
 	// Path is the open file. It is not shown; changing it tells the menu to
@@ -111,18 +114,19 @@ type Inputs struct {
 // Menu IDs. The frontend parses these (frontend/src/menu/actions.ts); a test
 // keeps the two in step.
 const (
-	IDNew          = "file.new"
-	IDOpen         = "file.open"
-	IDOpenFolder   = "file.openFolder"
-	IDCloseFolder  = "file.closeFolder"
-	IDSave         = "file.save"
-	IDSaveAs       = "file.saveAs"
-	IDQuit         = "file.quit"
-	IDClearRecent  = "file.recent.clear"
-	IDRemoteImages = "export.remote"
-	IDUndo         = "edit.undo"
-	IDRedo         = "edit.redo"
-	IDSidebar      = "view.sidebar"
+	IDNew           = "file.new"
+	IDOpen          = "file.open"
+	IDOpenFolder    = "file.openFolder"
+	IDCloseFolder   = "file.closeFolder"
+	IDSave          = "file.save"
+	IDSaveAs        = "file.saveAs"
+	IDQuit          = "file.quit"
+	IDClearRecent   = "file.recent.clear"
+	IDRemoteImages  = "export.remote"
+	IDUndo          = "edit.undo"
+	IDRedo          = "edit.redo"
+	IDSidebar       = "view.sidebar"
+	IDRemotePreview = "view.remoteImages"
 )
 
 // Parameterized IDs.
@@ -280,6 +284,7 @@ func viewMenu(s State, in Inputs) Node {
 	}
 	m = append(m, sep(),
 		Node{Kind: Check, ID: IDSidebar, Label: "Show Sidebar", Accelerator: "CmdOrCtrl+B", Checked: s.SidebarOpen},
+		Node{Kind: Check, ID: IDRemotePreview, Label: "Show Remote Images in This File", Checked: s.RemoteImages},
 		sep(),
 		layoutMenu(s, in.Engines),
 		themeMenu(s, in.Themes),

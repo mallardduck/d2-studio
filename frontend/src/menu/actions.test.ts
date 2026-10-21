@@ -15,6 +15,7 @@ describe("parseAction", () => {
     expect(parseAction("file.save")).toEqual({ type: "save" });
     expect(parseAction("edit.undo")).toEqual({ type: "undo" });
     expect(parseAction("view.sidebar")).toEqual({ type: "toggleSidebar" });
+    expect(parseAction("view.remoteImages")).toEqual({ type: "toggleFileRemoteImages" });
     expect(parseAction("export.remote")).toEqual({ type: "toggleRemoteImages" });
     expect(parseAction("file.recent.clear")).toEqual({ type: "clearRecent" });
   });

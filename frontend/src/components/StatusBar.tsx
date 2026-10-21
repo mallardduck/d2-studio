@@ -9,6 +9,9 @@ interface Props {
   /** Preview zoom percentage; null when there is no visible preview. */
   zoom?: number | null;
   errorCount: number;
+  /** A note about hidden or failed remote images, with an offer to show them. */
+  remoteNote?: { text: string; canShow: boolean } | null;
+  onShowRemote?: () => void;
   /** How the file is stored, e.g. "UTF-8 · CRLF". */
   encoding?: string;
   /** Non-blocking message, e.g. a settings save failure. */
@@ -28,7 +31,17 @@ function origin(source: string, overridden: string): string {
   return source === "source" ? " · from d2-config" : "";
 }
 
-export function StatusBar({ state, meta, themes, zoom, errorCount, encoding = "UTF-8", notice }: Props) {
+export function StatusBar({
+  state,
+  meta,
+  themes,
+  zoom,
+  errorCount,
+  remoteNote,
+  onShowRemote,
+  encoding = "UTF-8",
+  notice,
+}: Props) {
   const s = LABEL[state];
   const layoutOverrides =
     meta?.layoutSource === "ui" && meta.sourceLayout && meta.sourceLayout !== meta.layout ? meta.sourceLayout : "";
@@ -55,6 +68,21 @@ export function StatusBar({ state, meta, themes, zoom, errorCount, encoding = "U
           {zoom != null && <span>Zoom: {zoom}%</span>}
           <span>{meta.durationMs} ms</span>
         </>
+      )}
+      {remoteNote && (
+        <span className="flex items-center gap-1.5 text-warn">
+          {remoteNote.text}
+          {remoteNote.canShow && onShowRemote && (
+            <button
+              type="button"
+              onClick={onShowRemote}
+              title="Download and show remote images for this file (View ▸ Show Remote Images in This File)"
+              className="rounded border border-line px-1.5 text-fg hover:bg-line/40"
+            >
+              Show
+            </button>
+          )}
+        </span>
       )}
       <span role="status" className="text-fg">
         {notice}

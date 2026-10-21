@@ -14,6 +14,8 @@ export interface CompilerView {
   diagnostics: Diagnostic[];
   /** The exact source that `diagnostics` refer to. */
   diagnosticsSource: string;
+  /** Problems that did not stop the diagram rendering, e.g. an image that failed to load. */
+  warnings: Diagnostic[];
   meta: Meta | null;
 }
 
@@ -22,6 +24,7 @@ const EMPTY: CompilerView = {
   svg: "",
   diagnostics: [],
   diagnosticsSource: "",
+  warnings: [],
   meta: null,
 };
 
@@ -61,6 +64,7 @@ export function useCompiler(
               svg: res.svg,
               diagnostics: [],
               diagnosticsSource: source,
+              warnings: res.warnings ?? [],
               meta: res.meta,
             });
           } else {
