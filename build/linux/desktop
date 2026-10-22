@@ -1,7 +1,7 @@
 [Desktop Entry]
 Version=1.0
-Name=My Product
-Comment=A d2-studio application
+Name=D2 Studio
+Comment=A local editor and live preview for D2 diagrams
 # The Exec line includes %u to pass the URL to the application
 Exec=/usr/local/bin/d2-studio %u
 Terminal=false

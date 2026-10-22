@@ -54,6 +54,9 @@ func startLogging() (closeFn func()) {
 
 func main() {
 	defer startLogging()()
+	b := readBuildInfo()
+	mainLog.Info("D2 Studio starting", "version", b.App, "revision", b.Revision, "modified", b.Modified,
+		"d2", b.D2, "wails", b.Wails, "go", b.Go, "os", b.OS, "arch", b.Arch)
 
 	compilerCore, err := compiler.New(nil)
 	if err != nil {

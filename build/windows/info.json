@@ -6,10 +6,10 @@
 		"0409": {
 			"ProductVersion": "0.1.0",
 			"CompanyName": "LucidInternets",
-			"FileDescription": "A d2-studio application",
+			"FileDescription": "A local editor and live preview for D2 diagrams",
 			"LegalCopyright": "© 2026, LucidInternets",
-			"ProductName": "My Product",
-			"Comments": "This is a comment"
+			"ProductName": "D2 Studio",
+			"Comments": "Edit D2 diagrams with a live preview. Runs entirely on your machine."
 		}
 	}
 }
