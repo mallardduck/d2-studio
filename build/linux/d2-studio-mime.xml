@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Tells the desktop that *.d2 files are D2 diagrams. Without this mapping the
+  .desktop file's MimeType would name a type nothing ever assigns to a file.
+  Installed to /usr/share/mime/packages by the Linux package (see nfpm.yaml);
+  the post-install script runs update-mime-database.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="text/vnd.d2">
+    <comment>D2 diagram source</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.d2"/>
+  </mime-type>
+</mime-info>

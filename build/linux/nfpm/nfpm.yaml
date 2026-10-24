@@ -12,8 +12,7 @@ priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
 description: "A local editor and live preview for D2 diagrams"
 vendor: "LucidInternets"
-homepage: "https://wails.io"
-license: "MIT"
+license: "MPL-2.0"
 release: "1"
 
 contents:
@@ -23,6 +22,9 @@ contents:
     dst: "/usr/share/icons/hicolor/128x128/apps/d2-studio.png"
   - src: "./build/linux/d2-studio.desktop"
     dst: "/usr/share/applications/d2-studio.desktop"
+  # Maps *.d2 to the text/vnd.d2 type the .desktop file advertises.
+  - src: "./build/linux/d2-studio-mime.xml"
+    dst: "/usr/share/mime/packages/d2-studio.xml"
 
 # Default dependencies for the GTK4 + WebKitGTK 6.0 stack (Ubuntu 24.04+ / Debian 13+)
 depends:

@@ -20,6 +20,7 @@ import { useDocument } from "./hooks/useDocument";
 import { useWorkspace } from "./hooks/useWorkspace";
 import { useExport } from "./hooks/useExport";
 import { useRemoteImages } from "./hooks/useRemoteImages";
+import { useOpenRequests } from "./hooks/useOpenRequests";
 import { useMenu } from "./hooks/useMenu";
 import type { MenuActionType } from "./menu/actions";
 import type { State as MenuState } from "../bindings/d2studio/menu/models";
@@ -163,6 +164,7 @@ export default function App() {
   resync.current = useMenu(menuState, perform).resync;
 
   const { openPath } = docs;
+  useOpenRequests(openPath);
   const reveal = useCallback(
     (d: Diagnostic) => {
       // Offsets in an imported file mean nothing here: open that file instead.

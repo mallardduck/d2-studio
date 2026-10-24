@@ -4,12 +4,14 @@ import (
 	"embed"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"d2studio/compiler"
 	"d2studio/export"
 	"d2studio/files"
 	"d2studio/logging"
 	"d2studio/menu"
+	"d2studio/openfile"
 	"d2studio/settings"
 	"d2studio/workspace"
 
@@ -27,6 +29,7 @@ func init() {
 	application.RegisterEvent[files.Event](files.EventFileChanged)
 	application.RegisterEvent[workspace.Update](workspace.EventChanged)
 	application.RegisterEvent[menu.Action](EventMenuAction)
+	application.RegisterEvent[application.Void](EventOpenRequested)
 	application.RegisterEvent[application.Void](EventCloseRequested)
 }
 
@@ -70,7 +73,17 @@ func main() {
 	// functions that need the app are filled in once it has been created.
 	appService := &AppService{}
 
-	app := application.New(application.Options{
+	// Files the OS asks us to open (double-click, Open With, a path on the
+	// command line, or a second launch). The notifier and the window exist
+	// only after the app is created, so they are filled in afterwards.
+	var window *application.WebviewWindow
+	var app *application.App
+	openRequests := openfile.New(func() {
+		mainLog.Debug("the OS asked to open a file")
+		app.Event.Emit(EventOpenRequested)
+	})
+
+	app = application.New(application.Options{
 		Name:        "D2 Studio",
 		Description: "A local editor and live preview for D2 diagrams",
 		Services: []application.Service{
@@ -79,6 +92,24 @@ func main() {
 			application.NewService(appService),
 		},
 		ShouldQuit: func() bool { return shouldQuit() },
+		// With these, the OS can open .d2 files in us.
+		FileAssociations: []string{".d2"},
+		// Opening a second file from the OS goes to the window that is
+		// already open instead of starting another copy.
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "com.lucidinternets.d2studio",
+			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
+				mainLog.Debug("second launch forwarded to this instance", "args", len(data.Args))
+				if len(data.Args) > 1 { // Args[0] is the program itself, not a file
+					openRequests.AddArgs(data.Args[1:], data.WorkingDir)
+				}
+				if window != nil {
+					window.UnMinimise()
+					window.Show()
+					window.Focus()
+				}
+			},
+		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
 		},
@@ -107,12 +138,22 @@ func main() {
 	recentFiles = fileService.Recent
 	menuService := NewMenuService(app)
 	app.RegisterService(application.NewService(menuService))
+	app.RegisterService(application.NewService(&OpenService{requests: openRequests}))
+	app.Event.OnApplicationEvent(events.Common.ApplicationOpenedWithFile, func(e *application.ApplicationEvent) {
+		openRequests.Add(e.Context().Filename())
+	})
+	// A path on the command line of the first launch. Windows and Linux file
+	// associations pass it this way; macOS delivers an event instead, and its
+	// launcher can add arguments that are not files.
+	if runtime.GOOS != "darwin" {
+		openRequests.AddArgs(os.Args[1:], "")
+	}
 	// Start with our own menu bar rather than Wails' default; the frontend
 	// sends its real state as soon as it loads.
 	menuService.ApplyInitial(menu.State{ViewMode: "split", SidebarOpen: true, Autosave: "off", AutosaveDelaySec: 2})
 	app.RegisterService(application.NewService(export.NewService(compilerCore, &wailsPlatform{app: app})))
 
-	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "D2 Studio",
 		Width:     1280,
 		Height:    800,

@@ -170,12 +170,19 @@ tasks:
     dir: build
     cmds:
       - mkdir -p {{.ROOT_DIR}}/build/linux/appimage
-      - wails3 generate .desktop -name "{{.APP_NAME}}" -exec "{{.EXEC}}" -icon "{{.ICON}}" -outputfile "{{.ROOT_DIR}}/build/linux/{{.APP_NAME}}.desktop" -categories "{{.CATEGORIES}}"
+      - wails3 generate .desktop -name "{{.DISPLAY_NAME}}" -exec "{{.EXEC}}" -icon "{{.ICON}}" -outputfile "{{.ROOT_DIR}}/build/linux/{{.APP_NAME}}.desktop" -categories "{{.CATEGORIES}}" -comment "{{.COMMENT}}" -genericname "Diagram Editor" -keywords "D2;diagram;diagrams;architecture;editor;" -mimetype "{{.MIMETYPE}}"
     vars:
       APP_NAME: '{{.APP_NAME}}'
-      EXEC: '{{.APP_NAME}}'
+      # What menus show; APP_NAME is the binary and file name.
+      DISPLAY_NAME: 'D2 Studio'
+      # %f receives a file chosen in a file manager ("Open With", double-click).
+      EXEC: '{{.APP_NAME}} %f'
       ICON: '{{.APP_NAME}}'
-      CATEGORIES: 'Development;'
+      CATEGORIES: 'Development;Graphics;'
+      COMMENT: 'A local editor and live preview for D2 diagrams'
+      # Must match fileAssociations in build/config.yml and the shared-MIME
+      # mapping in build/linux/d2-studio-mime.xml (a test checks all three).
+      MIMETYPE: 'text/vnd.d2;'
       OUTPUTFILE: '{{.ROOT_DIR}}/build/linux/{{.APP_NAME}}.desktop'
 
   run:

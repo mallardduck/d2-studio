@@ -70,6 +70,12 @@ dev_mode:
 # File Associations
 # More information at: https://v3.wails.io/noit/done/yet
 fileAssociations:
+  - ext: d2
+    name: D2 Diagram
+    description: D2 diagram source file
+    iconName: appicon
+    role: Editor
+    mimeType: text/vnd.d2
 #  - ext: wails
 #    name: Wails
 #    description: Wails Application File

@@ -229,10 +229,16 @@ RequestExecutionLevel "${REQUEST_EXECUTION_LEVEL}"
 !macro wails.associateFiles
     ; Create file associations
     
+    !insertmacro APP_ASSOCIATE "d2" "D2 Diagram" "D2 diagram source file" "$INSTDIR\appicon.ico" "Open with ${INFO_PRODUCTNAME}" "$INSTDIR\${PRODUCT_EXECUTABLE} $\"%1$\""
+    File "..\appicon.ico"
+    
 !macroend
 
 !macro wails.unassociateFiles
     ; Delete app associations
+    
+    !insertmacro APP_UNASSOCIATE "d2" "D2 Diagram"
+    Delete "$INSTDIR\appicon.ico"
     
 !macroend
 

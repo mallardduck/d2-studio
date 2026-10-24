@@ -2,6 +2,23 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 	<dict>
+		<key>CFBundleDocumentTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeExtensions</key>
+				<array>
+					<string>d2</string>
+				</array>
+				<key>CFBundleTypeIconFile</key>
+				<string>appicon</string>
+				<key>CFBundleTypeMimeType</key>
+				<string>text/vnd.d2</string>
+				<key>CFBundleTypeName</key>
+				<string>D2 Diagram</string>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+			</dict>
+		</array>
 		<key>CFBundleExecutable</key>
 		<string>d2-studio</string>
 		<key>CFBundleGetInfoString</key>
