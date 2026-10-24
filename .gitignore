@@ -6,3 +6,5 @@ build/linux/appimage/build
 build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 !frontend/dist/.gitkeep
 frontend/bindings
+build/linux/d2-studio.desktop
+dist
