@@ -1,0 +1,189 @@
+name: CI
+
+# Checks every change on Linux, then builds and smoke-tests the app on Linux,
+# Windows and macOS. Also called by release.yml to build a release's files.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+# Nothing here needs to write to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The Wails CLI version must match the github.com/wailsapp/wails/v3 version in go.mod.
+  WAILS_VERSION: v3.0.0
+  GO_VERSION: "1.27" # D2 v0.9.0 requires Go 1.27; the newest patch release is used
+  NODE_VERSION: "24"
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-24.04 # 24.04 has the GTK 4 / WebKitGTK 6.0 packages the Linux build needs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - name: Install the Wails CLI
+        run: |
+          go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Generate the frontend bindings
+        run: wails3 generate bindings -clean=true -ts -i
+
+      - name: Frontend type-check
+        run: npx tsc --noEmit
+        working-directory: frontend
+
+      - name: Frontend tests
+        run: npx vitest run
+        working-directory: frontend
+
+      - name: Frontend build
+        run: npm run build
+        working-directory: frontend
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go tests
+        run: go test -race ./...
+
+      - name: Third-party licenses are all recognised
+        run: go run ./tools/gennotices -check
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: checks
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux, os: ubuntu-24.04 }
+          - { platform: windows, os: windows-latest }
+          - { platform: macos, os: macos-latest }
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Linux packages name a maintainer.
+      GIT_COMMITTER_NAME: ${{ github.actor }}
+      GIT_COMMITTER_EMAIL: ${{ github.actor }}@users.noreply.github.com
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev xvfb libfuse2t64
+
+      - name: Install NSIS (the Windows installer builder)
+        if: matrix.platform == 'windows'
+        run: |
+          choco install nsis --no-progress -y
+          echo "C:\Program Files (x86)\NSIS" >> "$GITHUB_PATH"
+
+      - name: Install the Wails CLI
+        run: |
+          go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Label for this build
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then label="${GITHUB_REF_NAME}"; else label="dev-${GITHUB_SHA::7}"; fi
+          echo "label=${label}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and package (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          wails3 task linux:build
+          wails3 task linux:create:deb
+
+      # The AppImage tooling downloads helpers and needs FUSE; if it fails the
+      # other Linux files are still released.
+      - name: Build the AppImage (Linux, optional)
+        if: matrix.platform == 'linux'
+        continue-on-error: true
+        run: wails3 task linux:create:appimage
+
+      - name: Build and package (Windows)
+        if: matrix.platform == 'windows'
+        run: wails3 task windows:package
+
+      - name: Build and package (macOS, universal)
+        if: matrix.platform == 'macos'
+        run: wails3 task darwin:package:universal
+
+      # Checks the built app starts. Not required to pass yet: hosted runners
+      # differ in how they handle windows, so this reports problems without
+      # blocking until it has proven reliable.
+      - name: Smoke test
+        continue-on-error: true
+        run: |
+          case "${{ matrix.platform }}" in
+            linux)   xvfb-run -a scripts/smoke.sh bin/d2-studio ;;
+            windows) scripts/smoke.sh bin/d2-studio.exe ;;
+            macos)   scripts/smoke.sh bin/d2-studio.app/Contents/MacOS/d2-studio ;;
+          esac
+
+      - name: Collect the release files
+        env:
+          ARCH: amd64
+        run: scripts/package-ci.sh "${{ matrix.platform }}" "${{ steps.version.outputs.label }}"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: d2-studio-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,65 @@
+name: Release
+
+# Pushing a tag such as v0.1.0-rc.1 builds every platform and creates a DRAFT
+# release (a pre-release when the tag has a suffix). A person reviews and
+# publishes it; nothing is published automatically.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Draft release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the draft release and attach files
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Windows and macOS only accept numeric versions, so the number is fixed
+      # in build/config.yml and the tag may add a suffix (-rc.1) but not change it.
+      - name: Check the tag matches the app version
+        run: |
+          core="${GITHUB_REF_NAME#v}"
+          core="${core%%-*}"
+          want=$(sed -n 's/^[[:space:]]*version:[[:space:]]*"\([^"]*\)".*/\1/p' build/config.yml | head -1)
+          if [ "$core" != "$want" ]; then
+            echo "The tag ${GITHUB_REF_NAME} is for version ${core}, but build/config.yml says ${want}." >&2
+            echo "Update build/config.yml and version.go, or use a tag like v${want}-rc.1." >&2
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: d2-studio-*
+          merge-multiple: true
+          path: dist
+
+      - name: Check every platform was built
+        run: |
+          for platform in macos windows linux; do
+            test -f "dist/SHA256SUMS-${platform}.txt" || { echo "No ${platform} build was produced." >&2; exit 1; }
+          done
+
+      - name: Combine the checksums
+        run: |
+          cd dist
+          cat SHA256SUMS-*.txt > SHA256SUMS.txt
+          rm SHA256SUMS-*.txt
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=(--draft --verify-tag --title "D2 Studio ${GITHUB_REF_NAME}" --notes-file .github/release-notes.md)
+          case "${GITHUB_REF_NAME}" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "${GITHUB_REF_NAME}" "${flags[@]}" dist/*

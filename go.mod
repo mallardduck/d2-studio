@@ -6,6 +6,7 @@ require (
 	github.com/d2lang/d2 v0.9.0
 	github.com/d2lang/util-go v0.2.0
 	github.com/wailsapp/wails/v3 v3.0.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -24,6 +25,7 @@ require (
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-text/typesetting v0.3.4 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
