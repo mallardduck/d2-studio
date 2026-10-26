@@ -30,8 +30,11 @@ type job struct {
 	Needs       any               `yaml:"needs"`
 	Permissions map[string]string `yaml:"permissions"`
 	Steps       []step            `yaml:"steps"`
-	Strategy    struct {
-		Matrix struct {
+	// TimeoutMinutes is 0 when unset (GitHub's default is six hours).
+	TimeoutMinutes int `yaml:"timeout-minutes"`
+	Strategy       struct {
+		FailFast *bool `yaml:"fail-fast"`
+		Matrix   struct {
 			Include []map[string]string `yaml:"include"`
 		} `yaml:"matrix"`
 	} `yaml:"strategy"`
@@ -239,5 +242,22 @@ func TestScriptsAreExecutableAndSyntacticallyValid(t *testing.T) {
 		if out, err := exec.Command("bash", "-n", s).CombinedOutput(); err != nil {
 			t.Errorf("%s has a syntax error: %v\n%s", s, err, out)
 		}
+	}
+}
+
+// A failed platform makes the release impossible, so the others should stop
+// at once instead of running for many more minutes; and no job should be able
+// to hang for GitHub's six-hour default.
+func TestBuildFailsFastAndEveryJobHasATimeout(t *testing.T) {
+	for file, w := range loadWorkflows(t) {
+		for name, j := range w.Jobs {
+			if j.Uses == "" && (j.TimeoutMinutes <= 0 || j.TimeoutMinutes > 60) {
+				t.Errorf("%s job %q needs a timeout-minutes between 1 and 60, has %d", file, name, j.TimeoutMinutes)
+			}
+		}
+	}
+	ff := loadWorkflows(t)["ci.yml"].Jobs["build"].Strategy.FailFast
+	if ff == nil || !*ff {
+		t.Error("the build matrix must set fail-fast: true so one failed platform stops the rest")
 	}
 }

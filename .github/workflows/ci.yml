@@ -26,6 +26,7 @@ env:
 jobs:
   checks:
     name: Checks
+    timeout-minutes: 20
     runs-on: ubuntu-24.04 # 24.04 has the GTK 4 / WebKitGTK 6.0 packages the Linux build needs
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,9 +85,12 @@ jobs:
   build:
     name: Build (${{ matrix.platform }})
     needs: checks
+    timeout-minutes: 45
     runs-on: ${{ matrix.os }}
+    # One platform failing stops the others: a release needs all three, so
+    # carrying on would only spend minutes on a run that cannot succeed.
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - { platform: linux, os: ubuntu-24.04 }
