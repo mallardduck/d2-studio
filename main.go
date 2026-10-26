@@ -88,6 +88,7 @@ func main() {
 		Description: "A local editor and live preview for D2 diagrams",
 		Services: []application.Service{
 			application.NewService(compilerService),
+			application.NewService(NewSnippetService(compilerCore)),
 			application.NewService(NewSettingsService()),
 			application.NewService(appService),
 		},
