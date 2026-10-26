@@ -129,3 +129,22 @@ func TestEveryPlatformCarriesTheProductName(t *testing.T) {
 		}
 	}
 }
+
+// The Windows installer bundles files from build/windows (the file-type icon
+// for .d2 files, the installer's own icon). If one is missing the NSIS build
+// fails, and only on the Windows runner, so check the references here.
+func TestWindowsInstallerFilesExist(t *testing.T) {
+	ref := regexp.MustCompile(`(?m)^\s*(?:File\s+"|!define MUI_U?N?ICON\s+")\.\.\\([^"\\]+)"`)
+	checked := 0
+	for _, script := range []string{"build/windows/nsis/project.nsi", "build/windows/nsis/wails_tools.nsh"} {
+		for _, m := range ref.FindAllStringSubmatch(read(t, script), -1) {
+			checked++
+			if _, err := os.Stat("build/windows/" + m[1]); err != nil {
+				t.Errorf("%s bundles %q, but build/windows/%s does not exist", script, m[1], m[1])
+			}
+		}
+	}
+	if checked < 3 { // the installer icon, the uninstaller icon and the .d2 icon
+		t.Fatalf("found only %d bundled files in the installer scripts; has their format changed?", checked)
+	}
+}
