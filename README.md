@@ -24,7 +24,7 @@ You need Go 1.27+, Node 24, and the Wails CLI:
 
 ```sh
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
-git clone <this repository> && cd <it>
+git clone https://github.com/mallardduck/d2-studio && cd d2-studio
 wails3 dev
 ```
 
