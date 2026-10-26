@@ -241,3 +241,37 @@ func TestRemoteImageFilesRoundTrip(t *testing.T) {
 		t.Fatalf("got %v", got.RemoteImageFiles)
 	}
 }
+
+func TestSidebarSplitIsClampedAndDefaulted(t *testing.T) {
+	cases := []struct {
+		name string
+		in   float64
+		want float64
+	}{
+		{"unset", 0, DefaultSidebarSplit},
+		{"negative", -1, DefaultSidebarSplit},
+		{"NaN", math.NaN(), DefaultSidebarSplit},
+		{"too small", 0.01, MinSplitRatio},
+		{"too large", 5, MaxSplitRatio},
+		{"in range", 0.3, 0.3},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := (Settings{SidebarSplit: c.in}).Normalize().SidebarSplit; got != c.want {
+				t.Fatalf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+	if got := Defaults().SidebarSplit; got != DefaultSidebarSplit {
+		t.Fatalf("default = %v", got)
+	}
+}
+
+func TestOldSettingsFileGetsTheDefaultSidebarSplit(t *testing.T) {
+	st, p := newStore(t)
+	_ = os.WriteFile(p, []byte(`{"viewMode":"split","splitRatio":0.4}`), 0o644)
+	got, err := st.Load()
+	if err != nil || got.SidebarSplit != DefaultSidebarSplit {
+		t.Fatalf("got %v, %v", got.SidebarSplit, err)
+	}
+}

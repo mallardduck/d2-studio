@@ -23,6 +23,9 @@ const (
 	MinSplitRatio = 0.15
 	MaxSplitRatio = 0.85
 
+	// DefaultSidebarSplit gives the file tree about two thirds of the sidebar.
+	DefaultSidebarSplit = 0.65
+
 	// Autosave modes.
 	AutosaveOff   = "off"   // never (the default)
 	AutosaveDelay = "delay" // after the user has stopped typing for AutosaveDelaySec
@@ -38,6 +41,9 @@ type Settings struct {
 	ViewMode string `json:"viewMode"`
 	// SplitRatio is the fraction of the width given to the source pane.
 	SplitRatio float64 `json:"splitRatio"`
+	// SidebarSplit is the fraction of the sidebar's height given to the file
+	// tree; the snippet list gets the rest.
+	SidebarSplit float64 `json:"sidebarSplit"`
 	// Layout is a layout engine ID, or "" to follow the D2 source / default.
 	Layout string `json:"layout"`
 	// ThemeID is a D2 theme ID, or nil to follow the D2 source / default.
@@ -69,7 +75,7 @@ type Settings struct {
 
 // Defaults returns the settings used on first launch.
 func Defaults() Settings {
-	return Settings{ViewMode: ViewSplit, SplitRatio: 0.5, SidebarOpen: true, Autosave: AutosaveOff, AutosaveDelaySec: DefaultAutosaveDelaySec}
+	return Settings{ViewMode: ViewSplit, SplitRatio: 0.5, SidebarSplit: DefaultSidebarSplit, SidebarOpen: true, Autosave: AutosaveOff, AutosaveDelaySec: DefaultAutosaveDelaySec}
 }
 
 // Normalize replaces invalid values with defaults and clamps the split ratio,
@@ -95,15 +101,23 @@ func (s Settings) Normalize() Settings {
 	case s.AutosaveDelaySec > MaxAutosaveDelaySec:
 		s.AutosaveDelaySec = MaxAutosaveDelaySec
 	}
-	switch {
-	case !(s.SplitRatio > 0): // unset, negative or NaN
-		s.SplitRatio = d.SplitRatio
-	case s.SplitRatio < MinSplitRatio:
-		s.SplitRatio = MinSplitRatio
-	case s.SplitRatio > MaxSplitRatio:
-		s.SplitRatio = MaxSplitRatio
-	}
+	s.SplitRatio = clampSplit(s.SplitRatio, d.SplitRatio)
+	s.SidebarSplit = clampSplit(s.SidebarSplit, d.SidebarSplit)
 	return s
+}
+
+// clampSplit keeps a split fraction within [MinSplitRatio, MaxSplitRatio]. An
+// unset, negative or NaN value becomes def.
+func clampSplit(v, def float64) float64 {
+	switch {
+	case !(v > 0):
+		return def
+	case v < MinSplitRatio:
+		return MinSplitRatio
+	case v > MaxSplitRatio:
+		return MaxSplitRatio
+	}
+	return v
 }
 
 // Store reads and writes Settings at a fixed path. Safe for concurrent use.
