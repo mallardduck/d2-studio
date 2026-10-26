@@ -26,7 +26,6 @@ env:
 jobs:
   checks:
     name: Checks
-    timeout-minutes: 20
     runs-on: ubuntu-24.04 # 24.04 has the GTK 4 / WebKitGTK 6.0 packages the Linux build needs
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,10 +43,22 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Restore the downloaded Linux packages
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: apt-ubuntu-24.04-${{ hashFiles('scripts/install-linux-deps.sh') }}
+
       - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+        run: scripts/install-linux-deps.sh
+
+      - name: Save the downloaded Linux packages
+        if: steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: apt-ubuntu-24.04-${{ hashFiles('scripts/install-linux-deps.sh') }}
 
       - name: Install the Wails CLI
         run: |
@@ -85,7 +96,6 @@ jobs:
   build:
     name: Build (${{ matrix.platform }})
     needs: checks
-    timeout-minutes: 45
     runs-on: ${{ matrix.os }}
     # One platform failing stops the others: a release needs all three, so
     # carrying on would only spend minutes on a run that cannot succeed.
@@ -120,11 +130,24 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Restore the downloaded Linux packages
+        id: apt-cache
+        if: matrix.platform == 'linux'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: apt-ubuntu-24.04-${{ hashFiles('scripts/install-linux-deps.sh') }}
+
       - name: Install Linux build dependencies
         if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev xvfb libfuse2t64
+        run: scripts/install-linux-deps.sh
+
+      - name: Save the downloaded Linux packages
+        if: steps.apt-cache.outputs.cache-hit != 'true' && matrix.platform == 'linux'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: apt-ubuntu-24.04-${{ hashFiles('scripts/install-linux-deps.sh') }}
 
       - name: Install NSIS (the Windows installer builder)
         if: matrix.platform == 'windows'

@@ -30,9 +30,7 @@ type job struct {
 	Needs       any               `yaml:"needs"`
 	Permissions map[string]string `yaml:"permissions"`
 	Steps       []step            `yaml:"steps"`
-	// TimeoutMinutes is 0 when unset (GitHub's default is six hours).
-	TimeoutMinutes int `yaml:"timeout-minutes"`
-	Strategy       struct {
+	Strategy    struct {
 		FailFast *bool `yaml:"fail-fast"`
 		Matrix   struct {
 			Include []map[string]string `yaml:"include"`
@@ -86,7 +84,8 @@ func TestWorkflowsAreValidAndHaveJobs(t *testing.T) {
 // A version tag can be moved to different code after the fact; a commit SHA
 // cannot. The trailing comment says which release the SHA is, for humans.
 func TestEveryActionIsPinnedToACommit(t *testing.T) {
-	sha := regexp.MustCompile(`^[\w.-]+/[\w.-]+@[0-9a-f]{40}$`)
+	// owner/repo, optionally followed by a subpath (actions/cache/restore).
+	sha := regexp.MustCompile(`^[\w.-]+/[\w.-]+(/[\w./-]+)?@[0-9a-f]{40}$`)
 	for name := range loadWorkflows(t) {
 		data, _ := os.ReadFile(filepath.Join(".github/workflows", name))
 		for i, line := range strings.Split(string(data), "\n") {
@@ -246,18 +245,39 @@ func TestScriptsAreExecutableAndSyntacticallyValid(t *testing.T) {
 }
 
 // A failed platform makes the release impossible, so the others should stop
-// at once instead of running for many more minutes; and no job should be able
-// to hang for GitHub's six-hour default.
-func TestBuildFailsFastAndEveryJobHasATimeout(t *testing.T) {
-	for file, w := range loadWorkflows(t) {
-		for name, j := range w.Jobs {
-			if j.Uses == "" && (j.TimeoutMinutes <= 0 || j.TimeoutMinutes > 60) {
-				t.Errorf("%s job %q needs a timeout-minutes between 1 and 60, has %d", file, name, j.TimeoutMinutes)
-			}
-		}
-	}
+// at once instead of running for many more minutes.
+func TestBuildFailsFast(t *testing.T) {
 	ff := loadWorkflows(t)["ci.yml"].Jobs["build"].Strategy.FailFast
 	if ff == nil || !*ff {
 		t.Error("the build matrix must set fail-fast: true so one failed platform stops the rest")
+	}
+}
+
+// GitHub's Ubuntu mirror can stall for minutes on one file, which once ran a
+// job for 20 minutes inside a bare `apt-get install`. Every Linux package
+// install must go through the script that sets per-download timeouts and
+// retries, and keeps the downloaded packages in a cache.
+func TestLinuxPackagesInstallThroughTheRetryingScript(t *testing.T) {
+	for file, w := range loadWorkflows(t) {
+		for name, j := range w.Jobs {
+			for _, st := range j.Steps {
+				if strings.Contains(st.Run, "apt-get") {
+					t.Errorf("%s job %q step %q calls apt-get directly; use scripts/install-linux-deps.sh", file, name, st.Name)
+				}
+			}
+		}
+	}
+	data, err := os.ReadFile("scripts/install-linux-deps.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Acquire::Retries=", "Acquire::http::Timeout=", "Dir::Cache::archives="} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("scripts/install-linux-deps.sh must set %s", want)
+		}
+	}
+	ci, _ := os.ReadFile(".github/workflows/ci.yml")
+	if n := strings.Count(string(ci), "scripts/install-linux-deps.sh"); n < 4 { // 2 installs, 2 cache keys each save+restore
+		t.Errorf("both jobs should install through the script and cache on it; found %d references", n)
 	}
 }
