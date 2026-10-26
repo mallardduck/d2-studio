@@ -168,6 +168,7 @@ jobs:
       # differ in how they handle windows, so this reports problems without
       # blocking until it has proven reliable.
       - name: Smoke test
+        id: smoke
         continue-on-error: true
         run: |
           case "${{ matrix.platform }}" in
@@ -180,6 +181,12 @@ jobs:
         env:
           ARCH: amd64
         run: scripts/package-ci.sh "${{ matrix.platform }}" "${{ steps.version.outputs.label }}"
+
+      # The smoke test does not fail the build, but its result is kept so a
+      # release can refuse to publish itself automatically unless it passed.
+      # (release.yml moves this file out of the files that are released.)
+      - name: Record the smoke test result
+        run: echo "${{ steps.smoke.outcome }}" > "dist/SMOKE-${{ matrix.platform }}.txt"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

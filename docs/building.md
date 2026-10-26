@@ -110,7 +110,18 @@ git tag v0.1.0-rc.1
 git push origin v0.1.0-rc.1
 ```
 
-`.github/workflows/release.yml` then runs the same build and creates a **draft** GitHub release (marked pre-release because the tag has a suffix) with the files, `SHA256SUMS.txt` and the notes from `.github/release-notes.md`. Nothing is published until a person reviews the draft and publishes it. The tag's number must equal the version in `build/config.yml`.
+`.github/workflows/release.yml` then runs the same build and creates a GitHub release with the files, `SHA256SUMS.txt` and the notes from `.github/release-notes.md`. The tag's number must equal the version in `build/config.yml`.
+
+**By default every release is a draft**: nothing is published until a person reviews it and clicks Publish. A tag with a suffix (`v0.1.0-rc.1`) makes it a pre-release.
+
+**Optional: let release candidates publish themselves.** Once a few candidates have gone out cleanly, you can set the repository variable `AUTO_PUBLISH_PRERELEASES` to `true` (Settings ▸ Secrets and variables ▸ Actions ▸ Variables, or `gh variable set AUTO_PUBLISH_PRERELEASES --body true`). Then a pre-release tag is published automatically, as a pre-release and never as the "latest" release, but only if **all** of these hold (`scripts/release-gate.sh`):
+
+- the tag has a suffix (**stable tags like `v0.1.0` are always drafts**);
+- the variable is exactly `true`;
+- every expected file was built (macOS zip, Windows installer and portable zip, Linux `.tar.gz` and `.deb`, and the checksums; the AppImage is optional);
+- the smoke test passed on macOS, Windows and Linux.
+
+Otherwise it stays a draft, and the run's summary says which condition failed. To turn auto-publishing off again, set the variable to anything else or delete it.
 
 To check what a release would contain without CI, after packaging on your machine:
 

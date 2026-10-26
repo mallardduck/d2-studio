@@ -1,8 +1,12 @@
 name: Release
 
-# Pushing a tag such as v0.1.0-rc.1 builds every platform and creates a DRAFT
-# release (a pre-release when the tag has a suffix). A person reviews and
-# publishes it; nothing is published automatically.
+# Pushing a tag such as v0.1.0-rc.1 builds every platform and creates a release.
+#
+# It is a DRAFT for a person to review and publish, with one optional
+# exception: a pre-release tag (one with a suffix, like -rc.1) is published
+# automatically when the repository variable AUTO_PUBLISH_PRERELEASES is
+# "true" and every platform built, has all its files, and passed its smoke
+# test (scripts/release-gate.sh). Stable tags are always drafts.
 on:
   push:
     tags: ["v*"]
@@ -56,10 +60,35 @@ jobs:
           cat SHA256SUMS-*.txt > SHA256SUMS.txt
           rm SHA256SUMS-*.txt
 
-      - name: Create the draft release
+      # The smoke results are inputs to the decision, not release files.
+      - name: Keep the smoke results out of the release
+        run: |
+          mkdir gates
+          # A platform that recorded no result simply fails the gate (a draft).
+          shopt -s nullglob
+          for f in dist/SMOKE-*.txt; do mv "$f" gates/; done
+
+      - name: Decide whether to publish or leave a draft
+        id: gate
+        env:
+          AUTO_PUBLISH: ${{ vars.AUTO_PUBLISH_PRERELEASES }}
+        run: |
+          scripts/release-gate.sh dist gates "${GITHUB_REF_NAME}" "${AUTO_PUBLISH}" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
+          PUBLISH: ${{ steps.gate.outputs.publish }}
+          REASON: ${{ steps.gate.outputs.reason }}
         run: |
-          flags=(--draft --verify-tag --title "D2 Studio ${GITHUB_REF_NAME}" --notes-file .github/release-notes.md)
-          case "${GITHUB_REF_NAME}" in *-*) flags+=(--prerelease) ;; esac
+          flags=(--verify-tag --title "D2 Studio ${GITHUB_REF_NAME}" --notes-file .github/release-notes.md)
+          if [ "${PUBLISH}" = "true" ]; then
+            # Only ever a pre-release, and never the "latest" release.
+            flags+=(--prerelease --latest=false)
+            echo "Published automatically: ${REASON}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            flags+=(--draft)
+            case "${GITHUB_REF_NAME}" in *-*) flags+=(--prerelease) ;; esac
+            echo "Left as a draft for review: ${REASON}" >> "$GITHUB_STEP_SUMMARY"
+          fi
           gh release create "${GITHUB_REF_NAME}" "${flags[@]}" dist/*

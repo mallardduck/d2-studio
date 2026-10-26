@@ -38,10 +38,12 @@ type job struct {
 }
 
 type step struct {
-	Name string         `yaml:"name"`
-	Uses string         `yaml:"uses"`
-	Run  string         `yaml:"run"`
-	With map[string]any `yaml:"with"`
+	ID   string            `yaml:"id"`
+	Name string            `yaml:"name"`
+	Uses string            `yaml:"uses"`
+	Run  string            `yaml:"run"`
+	Env  map[string]string `yaml:"env"`
+	With map[string]any    `yaml:"with"`
 }
 
 func loadWorkflows(t *testing.T) map[string]workflowFile {
@@ -131,9 +133,9 @@ func TestNoRiskyPatterns(t *testing.T) {
 		text := string(data)
 		for what, bad := range map[string]bool{
 			"pull_request_target (runs untrusted code with secrets)": strings.Contains(text, "pull_request_target"),
-			"an unpinned @latest":                                    regexp.MustCompile(`@(latest|main|master)\b`).MatchString(text),
-			"a download piped into a shell":                          pipeToShell.MatchString(text),
-			"ubuntu-latest (the GTK 4 packages need 24.04)":          strings.Contains(text, "ubuntu-latest"),
+			"an unpinned @latest":                           regexp.MustCompile(`@(latest|main|master)\b`).MatchString(text),
+			"a download piped into a shell":                 pipeToShell.MatchString(text),
+			"ubuntu-latest (the GTK 4 packages need 24.04)": strings.Contains(text, "ubuntu-latest"),
 		} {
 			if bad {
 				t.Errorf("%s contains %s", name, what)
@@ -213,8 +215,8 @@ func TestReleasesAreDraftsTriggeredByTagsAndCheckTheVersion(t *testing.T) {
 			t.Errorf("release.yml does not do this: %s", what)
 		}
 	}
-	if strings.Contains(text, "--draft=false") || strings.Contains(text, "--latest") {
-		t.Error("a release must never be published automatically")
+	if strings.Contains(text, "--draft=false") || regexp.MustCompile(`--latest(=true|\s|\)|")`).MatchString(text) {
+		t.Error("a release must never be forced out of draft or marked as the latest release")
 	}
 	if _, err := os.Stat(".github/release-notes.md"); err != nil {
 		t.Errorf("release.yml uses .github/release-notes.md: %v", err)
