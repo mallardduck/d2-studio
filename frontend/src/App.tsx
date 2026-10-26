@@ -14,6 +14,10 @@ import { FileBanner } from "./components/FileBanner";
 import { FileControls } from "./components/FileControls";
 import { Sidebar } from "./components/Sidebar";
 import { ExportMenu } from "./components/ExportMenu";
+import { SnippetTab } from "./components/SnippetTab";
+import { TabBar } from "./components/TabBar";
+import { useSnippets } from "./hooks/useSnippets";
+import { DOC_TAB, closeTab, initialTabs, openTab, pruneTabs, type Tabs } from "./tabs/model";
 import { useCompiler } from "./hooks/useCompiler";
 import { useConfirm } from "./hooks/useConfirm";
 import { useDocument } from "./hooks/useDocument";
@@ -42,6 +46,19 @@ export default function App() {
   const [zoom, setZoom] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryStatus>({ canUndo: false, canRedo: false });
   const { settings, update, saveError } = useSettings();
+  const { snippets, error: snippetsError } = useSnippets();
+  const [tabs, setTabs] = useState<Tabs>(initialTabs);
+  const openSnippet = useCallback((id: string) => setTabs((t) => openTab(t, id)), []);
+  const closeSnippet = useCallback((id: string) => setTabs((t) => closeTab(t, id)), []);
+  useEffect(() => {
+    if (snippets.length > 0) setTabs((t) => pruneTabs(t, new Set(snippets.map((s) => s.id))));
+  }, [snippets]);
+  // Inserting always goes into the document; from a snippet tab, go back to it
+  // first (the editor stays mounted, so the text lands where the cursor was).
+  const insertSnippet = useCallback((code: string) => {
+    setTabs((t) => (t.active === DOC_TAB ? t : { ...t, active: DOC_TAB }));
+    requestAnimationFrame(() => editor.current?.insert(code));
+  }, []);
 
   const { spec: dialog, confirm, choose } = useConfirm();
   const setContent = useCallback((text: string) => {
@@ -236,9 +253,45 @@ export default function App() {
             onOpenFolder={() => workspace.open(dirOf(docs.path))}
             onCloseFolder={workspace.close}
             onOpenFile={docs.openPath}
+            split={settings.sidebarSplit}
+            onSplitChange={(sidebarSplit) => update({ sidebarSplit })}
+            snippets={snippets}
+            snippetsError={snippetsError}
+            onOpenSnippet={openSnippet}
+            onInsertSnippet={insertSnippet}
           />
         )}
-        <main ref={main} className="flex min-h-0 min-w-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {tabs.open.length > 0 && (
+          <TabBar
+            tabs={[
+              { id: DOC_TAB, label: docs.name, suffix: docs.dirty ? " •" : "" },
+              ...tabs.open.map((id) => ({ id, label: snippets.find((x) => x.id === id)?.title ?? id })),
+            ]}
+            active={tabs.active}
+            onSelect={(id) => setTabs((t) => ({ ...t, active: id }))}
+            onClose={closeSnippet}
+          />
+        )}
+        {tabs.open.map((id) => {
+          const sn = snippets.find((x) => x.id === id);
+          return sn ? (
+            <div
+              key={id}
+              role="tabpanel"
+              aria-labelledby={`tab-${id}`}
+              hidden={tabs.active !== id}
+              className={`min-h-0 min-w-0 flex-1 ${tabs.active === id ? "flex" : ""}`}
+            >
+              <SnippetTab snippet={sn} language={language} onInsert={insertSnippet} />
+            </div>
+          ) : null;
+        })}
+        <main
+          ref={main}
+          hidden={tabs.active !== DOC_TAB}
+          className={`min-h-0 min-w-0 flex-1 ${tabs.active === DOC_TAB ? "flex" : ""}`}
+        >
           {/* Both panes stay mounted so editor state survives mode changes. */}
           <section
             aria-label="Source"
@@ -275,6 +328,7 @@ export default function App() {
             <Preview svg={view.svg} state={view.state} onZoomChange={setZoom} />
           </section>
         </main>
+        </div>
       </div>
 
       <StatusBar

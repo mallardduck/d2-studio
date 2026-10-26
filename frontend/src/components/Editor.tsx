@@ -4,6 +4,7 @@ import { redo, undo } from "@codemirror/commands";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { setDiagnostics, lintGutter } from "@codemirror/lint";
 import { TAB_HELP, tabKeys } from "../editor/tabKey";
+import { snippetInsertion } from "../editor/insertSnippet";
 import { historyStatus, type HistoryStatus } from "../editor/history";
 import type { Diagnostic as D2Diagnostic } from "../../bindings/d2studio/compiler/models";
 
@@ -15,6 +16,8 @@ export interface EditorHandle {
   /** The same undo and redo the keyboard uses, so menu and shortcut agree. */
   undo(): void;
   redo(): void;
+  /** Insert whole lines at the cursor (replacing any selection). */
+  insert(code: string): void;
 }
 
 interface Props {
@@ -142,6 +145,19 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
         redo(view.current);
         view.current.focus();
       }
+    },
+    insert(code) {
+      const v = view.current;
+      if (!v) return;
+      const { from, to } = v.state.selection.main;
+      const text = snippetInsertion(v.state.doc.toString(), from, code);
+      v.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+        scrollIntoView: true,
+        userEvent: "input.paste",
+      });
+      v.focus();
     },
     reveal(from, to) {
       const v = view.current;
