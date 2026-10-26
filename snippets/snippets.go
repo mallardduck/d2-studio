@@ -29,6 +29,7 @@ const (
 	Styling     = "Styling & layout"
 	Interactive = "Interactive"
 	Reuse       = "Reuse"
+	Examples    = "Complete examples"
 )
 
 var all = []Snippet{
@@ -325,6 +326,326 @@ gamma
 
 *.style.fill: lightyellow
 alpha -> *
+`,
+	},
+	{
+		ID: "ex-three-tier", Title: "Three-tier web application", Category: Examples,
+		Description: "Users, a CDN, a load balancer, redundant web and app servers, and a primary database with a read replica.",
+		Code: `direction: right
+
+users: Users { shape: person }
+cdn: CDN { shape: cloud }
+lb: Load balancer
+
+web: Web tier {
+  web1: Web server 1
+  web2: Web server 2
+}
+app: App tier {
+  app1: App server 1
+  app2: App server 2
+}
+data: Data tier {
+  primary: Primary database { shape: cylinder }
+  replica: Read replica { shape: cylinder }
+  primary -> replica: replicates
+}
+
+users -> cdn: HTTPS
+cdn -> lb: cache miss
+lb -> web.web1
+lb -> web.web2
+web.web1 -> app.app1
+web.web2 -> app.app2
+app.app1 -> data.primary: writes
+app.app2 -> data.replica: reads
+`,
+	},
+	{
+		ID: "ex-kubernetes", Title: "Kubernetes service", Category: Examples,
+		Description: "An ingress controller routing to a service backed by three pods that read configuration and secrets.",
+		Code: `internet: Internet { shape: cloud }
+
+cluster: Kubernetes cluster {
+  ingress: Ingress controller
+  service: shop-api Service
+  deploy: shop-api Deployment {
+    pod1: Pod 1
+    pod2: Pod 2
+    pod3: Pod 3
+  }
+  config: ConfigMap { shape: page }
+  secret: Secret { shape: page }
+
+  ingress -> service
+  service -> deploy.pod1
+  service -> deploy.pod2
+  service -> deploy.pod3
+  deploy.pod1 -> config: reads
+  deploy.pod1 -> secret: reads
+}
+
+internet -> cluster.ingress: HTTPS
+`,
+	},
+	{
+		ID: "ex-kubernetes-platform", Title: "Kubernetes platform with an admission webhook", Category: Examples,
+		Description: "The API server asks a validating admission webhook to approve workloads before they are stored. Around it: a second service the main one hands work to, Helm-installed platform components, and services outside the cluster.",
+		Code: `direction: down
+
+engineer: Platform engineer { shape: person }
+internet: Internet { shape: cloud }
+
+cluster: Kubernetes cluster {
+  control: control plane {
+    apiserver: kube-apiserver
+    etcd: etcd { shape: cylinder }
+  }
+
+  policy: policy namespace {
+    hook-svc: policy-webhook Service
+    hook: policy-webhook Deployment {
+      pod1: Pod 1
+      pod2: Pod 2
+    }
+  }
+
+  edge: ingress-nginx (Helm chart) {
+    controller: Ingress controller
+  }
+
+  shop: shop namespace {
+    api-svc: shop-api Service
+    api: shop-api Deployment {
+      pod1: Pod 1
+      pod2: Pod 2
+    }
+    worker-svc: shop-worker Service
+    worker: shop-worker Deployment {
+      pod1: Pod 1
+      pod2: Pod 2
+    }
+    config: ConfigMap { shape: page }
+    secret: Secret { shape: page }
+  }
+
+  platform: platform (Helm charts) {
+    certs: cert-manager
+    metrics: Prometheus
+    eso: External Secrets Operator
+  }
+
+  control.apiserver -> control.etcd: stores objects
+  control.apiserver -> policy.hook-svc: AdmissionReview {
+    style.stroke-dash: 4
+  }
+  policy.hook-svc -> policy.hook
+  platform.certs -> policy.hook: issues the serving certificate
+  platform.certs -> edge.controller: issues TLS certificates
+
+  edge.controller -> shop.api-svc: routes /api
+  shop.api-svc -> shop.api
+  shop.api -> shop.worker-svc: hands off jobs
+  shop.worker-svc -> shop.worker
+  shop.api -> shop.config: reads
+  shop.api -> shop.secret: reads
+
+  platform.metrics -> shop.api: scrapes
+  platform.metrics -> shop.worker: scrapes
+  platform.eso -> shop.secret: keeps in sync
+}
+
+database: Managed Postgres { shape: cylinder }
+vault: Secrets manager { shape: cloud }
+
+engineer -> cluster.control.apiserver: kubectl apply
+internet -> cluster.edge.controller: HTTPS
+cluster.shop.api -> database: SQL
+cluster.shop.worker -> database: SQL
+cluster.platform.eso -> vault: fetches secrets
+`,
+	},
+	{
+		ID: "ex-ci-cd", Title: "CI/CD pipeline", Category: Examples,
+		Description: "From a push, through build, test and scan stages, to an image registry and on to staging and production.",
+		Code: `direction: right
+
+dev: Developer { shape: person }
+repo: Git repository
+
+ci: CI pipeline {
+  build: Build
+  test: Test
+  scan: Security scan
+  build -> test -> scan
+}
+
+registry: Image registry { shape: cylinder }
+staging: Staging
+prod: Production
+
+dev -> repo: push
+repo -> ci.build: trigger
+ci.scan -> registry: publish image
+registry -> staging: deploy
+staging -> prod: promote after approval
+`,
+	},
+	{
+		ID: "ex-event-driven", Title: "Event-driven services", Category: Examples,
+		Description: "One service publishes an event to a broker; three consumers react, and failures land in a dead-letter queue.",
+		Code: `direction: right
+
+orders: Order service
+bus: Message broker { shape: queue }
+billing: Billing service
+inventory: Inventory service
+notify: Notification service
+dlq: Dead-letter queue { shape: queue }
+
+orders -> bus: OrderPlaced
+bus -> billing
+bus -> inventory
+bus -> notify
+billing -> dlq: failed after retries {
+  style: {
+    stroke-dash: 4
+    stroke: "#c0392b"
+  }
+}
+`,
+	},
+	{
+		ID: "ex-microservices", Title: "Microservices behind a gateway", Category: Examples,
+		Description: "An API gateway in front of four services, each with its own datastore, sharing a cache.",
+		Code: `direction: right
+
+client: Client app { shape: person }
+gateway: API gateway
+
+services: Services {
+  auth: Auth
+  users: Users
+  catalog: Catalog
+  orders: Orders
+}
+
+stores: Datastores {
+  auth-db: Auth DB { shape: cylinder }
+  users-db: Users DB { shape: cylinder }
+  catalog-db: Catalog DB { shape: cylinder }
+  orders-db: Orders DB { shape: cylinder }
+  cache: Shared cache { shape: cylinder }
+}
+
+client -> gateway: HTTPS
+gateway -> services.auth
+gateway -> services.users
+gateway -> services.catalog
+gateway -> services.orders
+services.auth -> stores.auth-db
+services.users -> stores.users-db
+services.catalog -> stores.catalog-db
+services.orders -> stores.orders-db
+services.catalog -> stores.cache: reads
+`,
+	},
+	{
+		ID: "ex-oauth", Title: "Sign-in with an identity provider", Category: Examples,
+		Description: "A sequence diagram of the OAuth authorization-code flow between a user, a web app, an identity provider and an API.",
+		Code: `shape: sequence_diagram
+
+user: User
+app: Web app
+idp: Identity provider
+api: API
+
+user -> app: click sign in
+app -> idp: redirect with client id
+idp -> user: show login page
+user -> idp: enter credentials
+idp -> app: authorization code
+app -> idp: exchange code for token
+idp -> app: access token
+app -> api: request with token
+api -> app: protected data
+app -> user: show the page
+`,
+	},
+	{
+		ID: "ex-office-network", Title: "Office network", Category: Examples,
+		Description: "A router, firewall and switch connecting servers, Wi-Fi and laptops to the internet.",
+		Code: `internet: Internet { shape: cloud }
+
+office: Office network {
+  router: Router
+  firewall: Firewall
+  switch: Switch
+  wifi: Wi-Fi access point
+  servers: Servers {
+    files: File server
+    printing: Print server
+  }
+  laptops: Laptops
+
+  router -> firewall -> switch
+  switch -> wifi
+  switch -> servers.files
+  switch -> servers.printing
+  wifi -> laptops
+}
+
+internet <-> office.router
+`,
+	},
+	{
+		ID: "ex-database-cluster", Title: "Highly available database", Category: Examples,
+		Description: "A connection pooler sending writes to a primary and reads to two replicas, with nightly backups to object storage.",
+		Code: `direction: down
+
+app: Application
+pooler: Connection pooler
+
+cluster: Database cluster {
+  primary: Primary { shape: cylinder }
+  replica1: Replica 1 { shape: cylinder }
+  replica2: Replica 2 { shape: cylinder }
+  primary -> replica1: streams changes
+  primary -> replica2: streams changes
+}
+
+backup: Object storage { shape: cloud }
+
+app -> pooler
+pooler -> cluster.primary: writes
+pooler -> cluster.replica1: reads
+pooler -> cluster.replica2: reads
+cluster.primary -> backup: nightly backup
+`,
+	}, {
+		ID: "ex-flowchart", Title: "Flowchart: why is the build red?", Category: Examples,
+		Description: "Decision diamonds and rounded start and end points, following a team's very relatable troubleshooting routine.",
+		Code: `direction: down
+
+start: The build is red { shape: oval }
+local: Does it fail on your machine too? { shape: diamond }
+flaky: Does it pass if you re-run it? { shape: diamond }
+fix: Fix the test
+quarantine: Quarantine the flaky test and file a ticket
+env: Compare the CI and local environments
+revert: Revert the last merge
+done: The build is green { shape: oval }
+
+start -> local
+local -> fix: yes
+local -> flaky: no
+flaky -> quarantine: yes
+flaky -> env: no
+env -> revert: no difference found
+env -> done: found it
+fix -> done
+quarantine -> done
+revert -> done
 `,
 	},
 }
