@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -227,18 +226,38 @@ func TestReleaseWorkflowPublishesOnlyThroughTheGate(t *testing.T) {
 		"reads the repository variable":              strings.Contains(text, "vars.AUTO_PUBLISH_PRERELEASES"),
 		"acts on the gate's answer":                  strings.Contains(text, "steps.gate.outputs.publish"),
 		"keeps the smoke results out of the release": strings.Contains(text, "SMOKE-") && strings.Contains(text, "gates"),
-		"never makes an automatic release 'latest'":  strings.Contains(text, "--prerelease --latest=false"),
-		"drafts by default":                          strings.Contains(text, "flags+=(--draft)"),
+		"never makes an automatic release 'latest'":  strings.Contains(text, "--draft=false --prerelease --latest=false"),
+		"always creates the release as a draft":      strings.Contains(text, "flags=(--draft --verify-tag"),
 	} {
 		if !ok {
 			t.Errorf("release.yml does not: %s", what)
 		}
 	}
-	// The only path that omits --draft must be the one guarded by PUBLISH == true.
-	create := text[strings.Index(text, "Create the release"):]
-	publishBranch := regexp.MustCompile(`(?s)if \[ "\$\{PUBLISH\}" = "true" \]; then(.*?)else`).FindStringSubmatch(create)
-	if publishBranch == nil || !strings.Contains(publishBranch[1], "--prerelease --latest=false") || strings.Contains(publishBranch[1], "--draft") {
-		t.Error("the publish branch must add only --prerelease --latest=false, and be guarded by the gate's answer")
+	// Nothing is public until the publish step, which only runs when the gate
+	// said so, and only after checking every file is on the draft.
+	var publish *step
+	for i, st := range loadWorkflows(t)["release.yml"].Jobs["release"].Steps {
+		if strings.Contains(st.Run, "--draft=false") {
+			if publish != nil {
+				t.Error("more than one step publishes the release")
+			}
+			publish = &loadWorkflows(t)["release.yml"].Jobs["release"].Steps[i]
+		}
+	}
+	if publish == nil {
+		t.Fatal("no step publishes the release")
+	}
+	if got := publish.If; got != "steps.gate.outputs.publish == 'true'" {
+		t.Errorf("the publish step must run only when the gate says so, but its condition is %q", got)
+	}
+	if !strings.Contains(publish.Run, "--prerelease --latest=false") {
+		t.Error("an automatic release must be a pre-release and never 'latest'")
+	}
+	if !strings.Contains(publish.Run, ".assets | length") || !strings.Contains(publish.Run, "exit 1") {
+		t.Error("the publish step must check every file made it onto the draft before publishing")
+	}
+	if strings.Contains(text[strings.Index(text, "Create the draft release"):strings.Index(text, "Publish the pre-release")], "--draft=false") {
+		t.Error("the create step must never publish")
 	}
 }
 

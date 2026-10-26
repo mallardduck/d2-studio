@@ -40,6 +40,7 @@ type job struct {
 
 type step struct {
 	ID   string            `yaml:"id"`
+	If   string            `yaml:"if"`
 	Name string            `yaml:"name"`
 	Uses string            `yaml:"uses"`
 	Run  string            `yaml:"run"`
@@ -217,8 +218,10 @@ func TestReleasesAreDraftsTriggeredByTagsAndCheckTheVersion(t *testing.T) {
 			t.Errorf("release.yml does not do this: %s", what)
 		}
 	}
-	if strings.Contains(text, "--draft=false") || regexp.MustCompile(`--latest(=true|\s|\)|")`).MatchString(text) {
-		t.Error("a release must never be forced out of draft or marked as the latest release")
+	// Leaving draft is allowed only in the gated publish step, which
+	// TestReleaseWorkflowPublishesOnlyThroughTheGate checks.
+	if regexp.MustCompile(`--latest(=true|\s|\)|")`).MatchString(text) {
+		t.Error("a release must never be marked as the latest release")
 	}
 	if _, err := os.Stat(".github/release-notes.md"); err != nil {
 		t.Errorf("release.yml uses .github/release-notes.md: %v", err)
